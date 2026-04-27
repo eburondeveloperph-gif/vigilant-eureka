@@ -175,6 +175,433 @@ export const beatriceTools: FunctionCall[] = [
     scheduling: FunctionResponseScheduling.WHEN_IDLE,
   },
   {
+    name: 'sheets_create',
+    description: 'Creates a new Google Sheet. Optionally include initial rows as a two-dimensional values array.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        title: { type: 'STRING', description: 'Spreadsheet title.' },
+        values: {
+          type: 'ARRAY',
+          items: { type: 'ARRAY', items: { type: 'STRING' } },
+          description: 'Optional initial rows, e.g. [["Name","Email"],["Ada","ada@example.com"]].',
+        },
+      },
+      required: ['title'],
+    },
+    isEnabled: true,
+    scheduling: FunctionResponseScheduling.WHEN_IDLE,
+  },
+  {
+    name: 'sheets_read',
+    description: 'Reads a range from an existing Google Sheet.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        spreadsheetId: { type: 'STRING', description: 'Google Sheets spreadsheet id.' },
+        range: { type: 'STRING', description: 'A1 range, e.g. "Sheet1!A1:D20". Default Sheet1!A1:Z1000.' },
+      },
+      required: ['spreadsheetId'],
+    },
+    isEnabled: true,
+    scheduling: FunctionResponseScheduling.WHEN_IDLE,
+  },
+  {
+    name: 'sheets_append',
+    description: 'Appends rows to a Google Sheet range.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        spreadsheetId: { type: 'STRING', description: 'Google Sheets spreadsheet id.' },
+        range: { type: 'STRING', description: 'A1 range to append into. Default Sheet1!A1.' },
+        values: {
+          type: 'ARRAY',
+          items: { type: 'ARRAY', items: { type: 'STRING' } },
+          description: 'Rows to append as a two-dimensional array.',
+        },
+      },
+      required: ['spreadsheetId', 'values'],
+    },
+    isEnabled: true,
+    scheduling: FunctionResponseScheduling.WHEN_IDLE,
+  },
+  {
+    name: 'sheets_update',
+    description: 'Writes or overwrites values in a Google Sheet range.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        spreadsheetId: { type: 'STRING', description: 'Google Sheets spreadsheet id.' },
+        range: { type: 'STRING', description: 'A1 range to update, e.g. "Sheet1!A1:C3".' },
+        values: {
+          type: 'ARRAY',
+          items: { type: 'ARRAY', items: { type: 'STRING' } },
+          description: 'Rows to write as a two-dimensional array.',
+        },
+      },
+      required: ['spreadsheetId', 'range', 'values'],
+    },
+    isEnabled: true,
+    scheduling: FunctionResponseScheduling.WHEN_IDLE,
+  },
+  {
+    name: 'slides_create',
+    description: 'Creates a new Google Slides presentation.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        title: { type: 'STRING', description: 'Presentation title.' },
+      },
+      required: ['title'],
+    },
+    isEnabled: true,
+    scheduling: FunctionResponseScheduling.WHEN_IDLE,
+  },
+  {
+    name: 'slides_add_slide',
+    description: 'Adds a title-and-body slide to an existing Google Slides deck.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        presentationId: { type: 'STRING', description: 'Google Slides presentation id.' },
+        title: { type: 'STRING', description: 'Slide title.' },
+        body: { type: 'STRING', description: 'Slide body text.' },
+      },
+      required: ['presentationId'],
+    },
+    isEnabled: true,
+    scheduling: FunctionResponseScheduling.WHEN_IDLE,
+  },
+  {
+    name: 'slides_get',
+    description: 'Loads metadata for an existing Google Slides deck.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        presentationId: { type: 'STRING', description: 'Google Slides presentation id.' },
+      },
+      required: ['presentationId'],
+    },
+    isEnabled: true,
+    scheduling: FunctionResponseScheduling.WHEN_IDLE,
+  },
+  {
+    name: 'tasks_list_lists',
+    description: 'Lists the user\'s Google Tasks lists.',
+    parameters: { type: 'OBJECT', properties: {}, required: [] },
+    isEnabled: true,
+    scheduling: FunctionResponseScheduling.WHEN_IDLE,
+  },
+  {
+    name: 'tasks_list',
+    description: 'Lists tasks from a Google Tasks list. Uses the default list if listId is omitted.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        listId: { type: 'STRING', description: 'Optional Google Tasks list id.' },
+        showCompleted: { type: 'BOOLEAN', description: 'Whether completed tasks should be included.' },
+      },
+      required: [],
+    },
+    isEnabled: true,
+    scheduling: FunctionResponseScheduling.WHEN_IDLE,
+  },
+  {
+    name: 'tasks_create',
+    description: 'Creates a Google Task in the default or specified task list.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        listId: { type: 'STRING', description: 'Optional Google Tasks list id.' },
+        title: { type: 'STRING', description: 'Task title.' },
+        notes: { type: 'STRING', description: 'Optional notes.' },
+        due: { type: 'STRING', description: 'Optional ISO due date/time.' },
+      },
+      required: ['title'],
+    },
+    isEnabled: true,
+    scheduling: FunctionResponseScheduling.WHEN_IDLE,
+  },
+  {
+    name: 'tasks_complete',
+    description: 'Marks a Google Task complete.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        listId: { type: 'STRING', description: 'Optional Google Tasks list id.' },
+        taskId: { type: 'STRING', description: 'Task id.' },
+      },
+      required: ['taskId'],
+    },
+    isEnabled: true,
+    scheduling: FunctionResponseScheduling.WHEN_IDLE,
+  },
+  {
+    name: 'tasks_delete',
+    description: 'Deletes a Google Task.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        listId: { type: 'STRING', description: 'Optional Google Tasks list id.' },
+        taskId: { type: 'STRING', description: 'Task id.' },
+      },
+      required: ['taskId'],
+    },
+    isEnabled: true,
+    scheduling: FunctionResponseScheduling.WHEN_IDLE,
+  },
+  {
+    name: 'people_search',
+    description: 'Searches the user\'s Google contacts by name, email, phone, or organization.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        query: { type: 'STRING', description: 'Contact search query.' },
+      },
+      required: ['query'],
+    },
+    isEnabled: true,
+    scheduling: FunctionResponseScheduling.WHEN_IDLE,
+  },
+  {
+    name: 'people_list',
+    description: 'Lists recently modified Google contacts for the signed-in user.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        limit: { type: 'INTEGER', description: 'Maximum contacts to return, 1-100. Default 30.' },
+      },
+      required: [],
+    },
+    isEnabled: true,
+    scheduling: FunctionResponseScheduling.WHEN_IDLE,
+  },
+  {
+    name: 'forms_create',
+    description: 'Creates a Google Form. Optionally include starter questions with title, description, required, options, choiceType, and paragraph.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        title: { type: 'STRING', description: 'Form title.' },
+        documentTitle: { type: 'STRING', description: 'Optional Drive document title.' },
+        questions: {
+          type: 'ARRAY',
+          items: { type: 'OBJECT' },
+          description: 'Optional starter questions. If options are supplied, a choice question is created; otherwise a text question is created.',
+        },
+      },
+      required: ['title'],
+    },
+    isEnabled: true,
+    scheduling: FunctionResponseScheduling.WHEN_IDLE,
+  },
+  {
+    name: 'forms_get',
+    description: 'Gets metadata and item summaries for a Google Form.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        formId: { type: 'STRING', description: 'Google Form id.' },
+      },
+      required: ['formId'],
+    },
+    isEnabled: true,
+    scheduling: FunctionResponseScheduling.WHEN_IDLE,
+  },
+  {
+    name: 'forms_add_question',
+    description: 'Adds a text or choice question to a Google Form.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        formId: { type: 'STRING', description: 'Google Form id.' },
+        title: { type: 'STRING', description: 'Question title.' },
+        description: { type: 'STRING', description: 'Optional question description.' },
+        required: { type: 'BOOLEAN', description: 'Whether the answer is required.' },
+        paragraph: { type: 'BOOLEAN', description: 'For text questions, whether to use paragraph response.' },
+        options: { type: 'ARRAY', items: { type: 'STRING' }, description: 'Choice options. Omit for text question.' },
+        choiceType: { type: 'STRING', description: 'RADIO, CHECKBOX, or DROP_DOWN. Default RADIO.' },
+        index: { type: 'INTEGER', description: 'Insertion index. Default 0.' },
+      },
+      required: ['formId', 'title'],
+    },
+    isEnabled: true,
+    scheduling: FunctionResponseScheduling.WHEN_IDLE,
+  },
+  {
+    name: 'forms_list_responses',
+    description: 'Lists submitted responses for a Google Form.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        formId: { type: 'STRING', description: 'Google Form id.' },
+        limit: { type: 'INTEGER', description: 'Maximum responses to return, 1-100. Default 20.' },
+        after: { type: 'STRING', description: 'Optional ISO timestamp; only responses submitted at/after this time are returned.' },
+      },
+      required: ['formId'],
+    },
+    isEnabled: true,
+    scheduling: FunctionResponseScheduling.WHEN_IDLE,
+  },
+  {
+    name: 'translate_text',
+    description: 'Translates text using Google Cloud Translation.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        text: { type: 'STRING', description: 'Text to translate.' },
+        texts: { type: 'ARRAY', items: { type: 'STRING' }, description: 'Optional multiple texts to translate.' },
+        target: { type: 'STRING', description: 'Target language code, e.g. "nl", "fr", "en", "tl".' },
+        source: { type: 'STRING', description: 'Optional source language code.' },
+        format: { type: 'STRING', description: 'text or html. Default text.' },
+      },
+      required: ['target'],
+    },
+    isEnabled: true,
+    scheduling: FunctionResponseScheduling.WHEN_IDLE,
+  },
+  {
+    name: 'translate_detect_language',
+    description: 'Detects the source language for text using Google Cloud Translation.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        text: { type: 'STRING', description: 'Text to detect.' },
+        texts: { type: 'ARRAY', items: { type: 'STRING' }, description: 'Optional multiple texts to detect.' },
+      },
+      required: [],
+    },
+    isEnabled: true,
+    scheduling: FunctionResponseScheduling.WHEN_IDLE,
+  },
+  {
+    name: 'chat_list_spaces',
+    description: 'Lists Google Chat spaces visible to the signed-in user. Use this before sending a message if the user named a space but did not provide the space id.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        query: { type: 'STRING', description: 'Optional client-side filter for space name/display name.' },
+        limit: { type: 'INTEGER', description: 'Maximum spaces to return, 1-100. Default 20.' },
+        pageToken: { type: 'STRING', description: 'Optional pagination token.' },
+      },
+      required: [],
+    },
+    isEnabled: true,
+    scheduling: FunctionResponseScheduling.WHEN_IDLE,
+  },
+  {
+    name: 'chat_list_messages',
+    description: 'Lists recent messages in a Google Chat space.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        space: { type: 'STRING', description: 'Space resource name, e.g. "spaces/AAAA...".' },
+        limit: { type: 'INTEGER', description: 'Maximum messages to return, 1-100. Default 20.' },
+        pageToken: { type: 'STRING', description: 'Optional pagination token.' },
+      },
+      required: ['space'],
+    },
+    isEnabled: true,
+    scheduling: FunctionResponseScheduling.WHEN_IDLE,
+  },
+  {
+    name: 'chat_send_message',
+    description: 'Sends a plain-text message to a Google Chat space.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        space: { type: 'STRING', description: 'Space resource name, e.g. "spaces/AAAA...".' },
+        text: { type: 'STRING', description: 'Message body.' },
+        thread: { type: 'STRING', description: 'Optional thread resource name.' },
+        threadKey: { type: 'STRING', description: 'Optional thread key for grouped replies.' },
+        messageReplyOption: { type: 'STRING', description: 'Optional Google Chat reply option.' },
+      },
+      required: ['space', 'text'],
+    },
+    isEnabled: true,
+    scheduling: FunctionResponseScheduling.WHEN_IDLE,
+  },
+  {
+    name: 'youtube_search',
+    description: 'Searches YouTube videos, channels, or playlists.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        query: { type: 'STRING', description: 'YouTube search query.' },
+        type: { type: 'STRING', description: 'video, channel, or playlist. Default video.' },
+        limit: { type: 'INTEGER', description: 'Maximum results, 1-20. Default 6.' },
+        regionCode: { type: 'STRING', description: 'Optional region code, e.g. "US", "BE", "PH".' },
+        language: { type: 'STRING', description: 'Optional relevance language code.' },
+      },
+      required: ['query'],
+    },
+    isEnabled: true,
+    scheduling: FunctionResponseScheduling.WHEN_IDLE,
+  },
+  {
+    name: 'youtube_video_details',
+    description: 'Gets metadata, duration, and statistics for a YouTube video.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        videoId: { type: 'STRING', description: 'YouTube video id.' },
+      },
+      required: ['videoId'],
+    },
+    isEnabled: true,
+    scheduling: FunctionResponseScheduling.WHEN_IDLE,
+  },
+  {
+    name: 'youtube_channel_info',
+    description: 'Gets metadata and recent uploads for a YouTube channel.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        channelId: { type: 'STRING', description: 'YouTube channel id.' },
+        handle: { type: 'STRING', description: 'YouTube handle, e.g. "@Google".' },
+      },
+      required: [],
+    },
+    isEnabled: true,
+    scheduling: FunctionResponseScheduling.WHEN_IDLE,
+  },
+  {
+    name: 'youtube_trending',
+    description: 'Lists trending YouTube videos for a region.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        regionCode: { type: 'STRING', description: 'Region code, e.g. "US", "BE", "PH". Default US.' },
+        limit: { type: 'INTEGER', description: 'Maximum videos, 1-25. Default 8.' },
+        categoryId: { type: 'STRING', description: 'Optional YouTube video category id.' },
+      },
+      required: [],
+    },
+    isEnabled: true,
+    scheduling: FunctionResponseScheduling.WHEN_IDLE,
+  },
+  {
+    name: 'youtube_playlist_items',
+    description: 'Lists videos in a YouTube playlist.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        playlistId: { type: 'STRING', description: 'YouTube playlist id.' },
+        limit: { type: 'INTEGER', description: 'Maximum items, 1-50. Default 15.' },
+      },
+      required: ['playlistId'],
+    },
+    isEnabled: true,
+    scheduling: FunctionResponseScheduling.WHEN_IDLE,
+  },
+  {
+    name: 'youtube_status',
+    description: 'Checks whether the configured YouTube Data API key is reachable.',
+    parameters: { type: 'OBJECT', properties: {}, required: [] },
+    isEnabled: true,
+    scheduling: FunctionResponseScheduling.WHEN_IDLE,
+  },
+  {
     name: 'meet_schedule',
     description: 'Generates a Google Meet link and schedules a video call.',
     parameters: {
@@ -246,13 +673,47 @@ export const beatriceTools: FunctionCall[] = [
   },
   {
     name: 'video_generate',
-    description: 'Generates a high-quality AI video based on a descriptive text prompt. This tool uses an advanced video agent to create visuals, script, and avatar presentation.',
+    description: 'Generates a high-quality HeyGen AI video from a descriptive text prompt. Use this during voice conversations when the user asks Beatrice to create, render, or generate a video.',
     parameters: {
       type: 'OBJECT',
       properties: {
-        prompt: { type: 'STRING', description: 'A detailed description of the video content, including the presenter\'s topic, style, and duration (e.g., "A presenter explaining our product launch in 30 seconds").' }
+        prompt: { type: 'STRING', description: 'Detailed video prompt, including presenter topic, audience, tone, duration, language, and visual style.' },
+        mode: { type: 'STRING', description: 'HeyGen Video Agent mode: "generate" for one-shot rendering or "chat" for multi-turn review. Default "generate".' },
+        orientation: { type: 'STRING', description: 'Optional video orientation: "landscape" or "portrait".' },
+        avatarId: { type: 'STRING', description: 'Optional HeyGen avatar/look id.' },
+        voiceId: { type: 'STRING', description: 'Optional HeyGen voice id.' },
+        styleId: { type: 'STRING', description: 'Optional HeyGen Video Agent style id.' },
+        incognitoMode: { type: 'BOOLEAN', description: 'Optional: disables HeyGen memory injection/extraction for the session.' },
       },
       required: ['prompt'],
+    },
+    isEnabled: true,
+    scheduling: FunctionResponseScheduling.WHEN_IDLE,
+  },
+  {
+    name: 'video_status',
+    description: 'Checks the status of a HeyGen video generation job by sessionId or videoId. Use this when a HeyGen render is already running.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        sessionId: { type: 'STRING', description: 'HeyGen Video Agent session id.' },
+        videoId: { type: 'STRING', description: 'HeyGen video id.' },
+      },
+      required: [],
+    },
+    isEnabled: true,
+    scheduling: FunctionResponseScheduling.WHEN_IDLE,
+  },
+  {
+    name: 'video_list_sessions',
+    description: 'Lists recent HeyGen Video Agent sessions for the authenticated HeyGen account, sorted newest-first. Use when the user asks for recent, previous, or existing HeyGen video agent sessions.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        limit: { type: 'INTEGER', description: 'Results per page, 1-100. Default 20.' },
+        token: { type: 'STRING', description: 'Optional pagination cursor from nextToken / next_token.' },
+      },
+      required: [],
     },
     isEnabled: true,
     scheduling: FunctionResponseScheduling.WHEN_IDLE,

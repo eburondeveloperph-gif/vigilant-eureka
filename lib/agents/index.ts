@@ -8,87 +8,123 @@
  */
 import type { ConversationContext } from '@/lib/conversation-context';
 import type { AgentHandler, AgentResult } from './types';
-import * as emailAgent from './email-agent';
-import * as calendarAgent from './calendar-agent';
-import * as documentAgent from './document-agent';
-import * as driveAgent from './drive-agent';
-import * as imageAgent from './image-agent';
-import * as navigationAgent from './navigation-agent';
-import * as videoAgent from './video-agent';
-import * as visionAgent from './vision-agent';
-import * as customerSupportAgent from './customer-support-agent';
-import * as eburonflixAgent from './eburonflix-agent';
-import * as conversationMemoryAgent from './conversation-memory-agent';
-import * as knowledgeBaseAgent from './knowledge-base-agent';
-import * as whatsappAgent from './whatsapp-agent';
-import * as zapierAgent from './zapier-agent';
 
 /**
  * Each entry maps a tool name or name prefix to its handler.
  * Prefix matching uses `startsWith` — so 'gmail_' matches 'gmail_send', 'gmail_read', etc.
  */
 type AgentEntry = {
-  handler: AgentHandler;
+  loadHandler: () => Promise<AgentHandler>;
   /** If true, match by prefix (startsWith). If false, match exact name only. */
   prefix: boolean;
 };
 
 const registry = new Map<string, AgentEntry>();
 
+const lazyAgent = (
+  loader: () => Promise<{ handle: AgentHandler }>,
+): (() => Promise<AgentHandler>) => {
+  let cached: Promise<AgentHandler> | null = null;
+  return () => {
+    if (!cached) {
+      cached = loader().then(module => module.handle);
+    }
+    return cached;
+  };
+};
+
+const emailAgent = lazyAgent(() => import('./email-agent'));
+const calendarAgent = lazyAgent(() => import('./calendar-agent'));
+const documentAgent = lazyAgent(() => import('./document-agent'));
+const driveAgent = lazyAgent(() => import('./drive-agent'));
+const imageAgent = lazyAgent(() => import('./image-agent'));
+const navigationAgent = lazyAgent(() => import('./navigation-agent'));
+const videoAgent = lazyAgent(() => import('./video-agent'));
+const visionAgent = lazyAgent(() => import('./vision-agent'));
+const customerSupportAgent = lazyAgent(() => import('./customer-support-agent'));
+const eburonflixAgent = lazyAgent(() => import('./eburonflix-agent'));
+const conversationMemoryAgent = lazyAgent(() => import('./conversation-memory-agent'));
+const knowledgeBaseAgent = lazyAgent(() => import('./knowledge-base-agent'));
+const whatsappAgent = lazyAgent(() => import('./whatsapp-agent'));
+const zapierAgent = lazyAgent(() => import('./zapier-agent'));
+const sheetsAgent = lazyAgent(() => import('./sheets-agent'));
+const slidesAgent = lazyAgent(() => import('./slides-agent'));
+const tasksAgent = lazyAgent(() => import('./tasks-agent'));
+const peopleAgent = lazyAgent(() => import('./people-agent'));
+const formsAgent = lazyAgent(() => import('./forms-agent'));
+const translateAgent = lazyAgent(() => import('./translate-agent'));
+const chatAgent = lazyAgent(() => import('./chat-agent'));
+const youtubeAgent = lazyAgent(() => import('./youtube-agent'));
+
+const register = (key: string, loadHandler: () => Promise<AgentHandler>, prefix: boolean) => {
+  registry.set(key, { loadHandler, prefix });
+};
+
 // ── Email Agent ─────────────────────────────────────────
-registry.set('gmail_', { handler: emailAgent.handle, prefix: true });
-registry.set('send_email', { handler: emailAgent.handle, prefix: false });
+register('gmail_', emailAgent, true);
+register('send_email', emailAgent, false);
 
 // ── Calendar Agent ─────────────────────────────────────
-registry.set('calendar_', { handler: calendarAgent.handle, prefix: true });
-registry.set('create_calendar_event', { handler: calendarAgent.handle, prefix: false });
-registry.set('meet_', { handler: calendarAgent.handle, prefix: true });
-registry.set('set_reminder', { handler: calendarAgent.handle, prefix: false });
+register('calendar_', calendarAgent, true);
+register('create_calendar_event', calendarAgent, false);
+register('meet_', calendarAgent, true);
+register('set_reminder', calendarAgent, false);
 
 // ── Document Agent ─────────────────────────────────────
-registry.set('document_', { handler: documentAgent.handle, prefix: true });
+register('document_', documentAgent, true);
 
 // ── Drive / Docs Agent ─────────────────────────────────
-registry.set('drive_', { handler: driveAgent.handle, prefix: true });
-registry.set('docs_', { handler: driveAgent.handle, prefix: true });
+register('drive_', driveAgent, true);
+register('docs_', driveAgent, true);
 
 // ── Navigation Agent ───────────────────────────────────
-registry.set('find_route', { handler: navigationAgent.handle, prefix: false });
-registry.set('maps_', { handler: navigationAgent.handle, prefix: true });
-registry.set('find_nearby_places', { handler: navigationAgent.handle, prefix: false });
-registry.set('get_traffic_info', { handler: navigationAgent.handle, prefix: false });
+register('find_route', navigationAgent, false);
+register('maps_', navigationAgent, true);
+register('find_nearby_places', navigationAgent, false);
+register('get_traffic_info', navigationAgent, false);
 
 // ── Video Agent ────────────────────────────────────────
-registry.set('video_', { handler: videoAgent.handle, prefix: true });
+register('video_', videoAgent, true);
 
 // ── Image Agent ────────────────────────────────────────
-registry.set('image_', { handler: imageAgent.handle, prefix: true });
+register('image_', imageAgent, true);
 
 // ── Vision / CCTV Agent ────────────────────────────────
-registry.set('vision_', { handler: visionAgent.handle, prefix: true });
+register('vision_', visionAgent, true);
 
 // ── Customer Support Agent ─────────────────────────────
-registry.set('start_return', { handler: customerSupportAgent.handle, prefix: false });
-registry.set('get_order_status', { handler: customerSupportAgent.handle, prefix: false });
-registry.set('speak_to_representative', { handler: customerSupportAgent.handle, prefix: false });
+register('start_return', customerSupportAgent, false);
+register('get_order_status', customerSupportAgent, false);
+register('speak_to_representative', customerSupportAgent, false);
+register('call_representative', customerSupportAgent, false);
 
 // ── EburonFlix Agent ───────────────────────────────────
-registry.set('eburonflix_', { handler: eburonflixAgent.handle, prefix: true });
+register('eburonflix_', eburonflixAgent, true);
 
 // ── Conversation Memory Agent ──────────────────────────
-registry.set('remember_this', { handler: conversationMemoryAgent.handle, prefix: false });
-registry.set('remember_that', { handler: conversationMemoryAgent.handle, prefix: false });
-registry.set('conversation_memory_', { handler: conversationMemoryAgent.handle, prefix: true });
-registry.set('conversation_history_', { handler: conversationMemoryAgent.handle, prefix: true });
+register('remember_this', conversationMemoryAgent, false);
+register('remember_that', conversationMemoryAgent, false);
+register('conversation_memory_', conversationMemoryAgent, true);
+register('conversation_history_', conversationMemoryAgent, true);
 
 // ── Knowledge Base Agent (/files) ──────────────────────
-registry.set('knowledge_base_', { handler: knowledgeBaseAgent.handle, prefix: true });
+register('knowledge_base_', knowledgeBaseAgent, true);
 
 // ── WhatsApp Agent (Meta Cloud API) ───────────────────
-registry.set('whatsapp_', { handler: whatsappAgent.handle, prefix: true });
+register('whatsapp_', whatsappAgent, true);
 
 // ── Zapier Agent (Catch Hook webhooks) ────────────────
-registry.set('zapier_', { handler: zapierAgent.handle, prefix: true });
+register('zapier_', zapierAgent, true);
+
+// ── Google Workspace Extended Agents ─────────────────
+register('sheets_', sheetsAgent, true);
+register('slides_', slidesAgent, true);
+register('tasks_', tasksAgent, true);
+register('people_', peopleAgent, true);
+register('forms_', formsAgent, true);
+register('translate_', translateAgent, true);
+register('chat_', chatAgent, true);
+register('youtube_', youtubeAgent, true);
 
 /**
  * Routes a tool call to the correct specialized agent.
@@ -105,13 +141,15 @@ export async function dispatchToAgent(
   // 1. Try exact match
   const exactEntry = registry.get(toolName);
   if (exactEntry && !exactEntry.prefix) {
-    return exactEntry.handler(toolName, args, ctx);
+    const handler = await exactEntry.loadHandler();
+    return handler(toolName, args, ctx);
   }
 
   // 2. Try prefix match
   for (const [key, entry] of registry) {
     if (entry.prefix && toolName.startsWith(key)) {
-      return entry.handler(toolName, args, ctx);
+      const handler = await entry.loadHandler();
+      return handler(toolName, args, ctx);
     }
   }
 

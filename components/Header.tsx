@@ -10,9 +10,32 @@ import c from 'classnames';
 interface HeaderProps {
   mode?: 'menu' | 'back';
   onBack?: () => void;
+  /** Optional secondary action rendered on the right side, parallel to the hamburger. */
+  rightAction?: {
+    icon: string;
+    title: string;
+    onClick: () => void;
+  };
 }
 
-export default function Header({ mode = 'menu', onBack }: HeaderProps) {
+const iconButtonStyle: React.CSSProperties = {
+  width: '40px',
+  height: '40px',
+  borderRadius: '50%',
+  background: 'rgba(255,255,255,0.04)',
+  backdropFilter: 'blur(16px)',
+  WebkitBackdropFilter: 'blur(16px)',
+  border: '1px solid rgba(255,255,255,0.08)',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  cursor: 'pointer',
+  color: '#9ca3af',
+  transition: 'all 0.2s ease',
+  flexShrink: 0,
+};
+
+export default function Header({ mode = 'menu', onBack, rightAction }: HeaderProps) {
   const { isGeneratingTask, toggleSidebar } = useUI();
   const micLevel = useUI(state => state.micLevel);
   const { connected, volume } = useLiveAPIContext();
@@ -28,32 +51,18 @@ export default function Header({ mode = 'menu', onBack }: HeaderProps) {
   const orbScale = 1 + orbEnergy * 0.18;
 
   return (
-    <header>
+    <header className="app-header">
       <div className="header-left">
         <button
           onClick={handlePrimaryAction}
           title={isBackMode ? 'Back' : 'Open sidebar'}
           aria-label={isBackMode ? 'Back' : 'Open sidebar'}
-          style={{
-            width: '40px',
-            height: '40px',
-            borderRadius: '50%',
-            background: 'rgba(255,255,255,0.03)',
-            backdropFilter: 'blur(16px)',
-            WebkitBackdropFilter: 'blur(16px)',
-            border: '1px solid rgba(255,255,255,0.08)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            cursor: 'pointer',
-            color: '#9ca3af',
-            transition: 'all 0.2s ease',
-          }}
+          style={iconButtonStyle}
         >
           <i className={isBackMode ? 'ph ph-caret-left' : 'ph ph-list'} style={{ fontSize: '20px' }}></i>
         </button>
       </div>
-      <div className="header-right">
+      <div className="header-right" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
         {/* Mini Orb with Audio Visualizer - only shown during processing */}
         {showHeaderOrb && (
           <div className="header-orb-wrapper">
@@ -70,6 +79,16 @@ export default function Header({ mode = 'menu', onBack }: HeaderProps) {
               <AudioVisualizer />
             </div>
           </div>
+        )}
+        {rightAction && (
+          <button
+            onClick={rightAction.onClick}
+            title={rightAction.title}
+            aria-label={rightAction.title}
+            style={iconButtonStyle}
+          >
+            <i className={rightAction.icon} style={{ fontSize: '18px' }}></i>
+          </button>
         )}
       </div>
     </header>

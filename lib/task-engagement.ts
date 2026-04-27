@@ -15,6 +15,14 @@ export type TaskType =
   | 'calendar_create'
   | 'drive_search'
   | 'docs_create'
+  | 'sheets'
+  | 'slides'
+  | 'tasks'
+  | 'people'
+  | 'forms'
+  | 'translate'
+  | 'chat'
+  | 'youtube'
   | 'meet_schedule'
   | 'maps_navigate'
   | 'document_scan'
@@ -37,6 +45,14 @@ const taskPatterns: [RegExp, TaskInfo][] = [
   [/create\s+(an?\s+)?event|schedule\s+(a\s+)?meeting|add\s+(to\s+)?(my\s+)?calendar|calendar\s+create|set\s+(up\s+)?a\s+(meeting|appointment)/i, { type: 'calendar_create', label: 'Scheduling your event', icon: '🗓️' }],
   [/search\s+(my\s+)?drive|find\s+(a\s+)?file|drive\s+search|look\s+(for|up)\s+(a\s+)?(file|document)/i, { type: 'drive_search', label: 'Searching your Drive', icon: '📁' }],
   [/create\s+(a\s+)?(doc|document|google\s*doc)|docs?\s+create/i, { type: 'docs_create', label: 'Creating your document', icon: '📝' }],
+  [/(create|make|update|read|append)\s+(a\s+)?(sheet|spreadsheet|google\s*sheet)|sheets?_(create|read|append|update)|log\s+.+\s+to\s+sheets?/i, { type: 'sheets', label: 'Working in Sheets', icon: '📊' }],
+  [/(create|make|update|add)\s+(a\s+)?(slide|deck|presentation|google\s*slides)|slides?_(create|add|get)/i, { type: 'slides', label: 'Working in Slides', icon: '📽️' }],
+  [/(create|add|list|complete|delete)\s+(a\s+)?(task|todo)|tasks?_(list|create|complete|delete)|to[-\s]?do/i, { type: 'tasks', label: 'Working in Tasks', icon: '✅' }],
+  [/(search|find|list)\s+(my\s+)?(contacts|people)|people_(search|list)|contact\s+(lookup|search)/i, { type: 'people', label: 'Searching contacts', icon: '👥' }],
+  [/(create|make|update|read)\s+(a\s+)?(form|google\s*form)|forms?_(create|get|add|list)|form\s+responses?/i, { type: 'forms', label: 'Working in Forms', icon: '📋' }],
+  [/translate|detect\s+(the\s+)?language|translate_(text|detect_language)/i, { type: 'translate', label: 'Translating text', icon: '🌐' }],
+  [/(send|post|list|read)\s+.+\s+(google\s+)?chat|chat_(send|list)|chat\s+space/i, { type: 'chat', label: 'Working in Chat', icon: '💬' }],
+  [/youtube|yt\s+search|trending\s+videos?|video\s+details/i, { type: 'youtube', label: 'Searching YouTube', icon: '▶️' }],
   [/schedule\s+(a\s+)?(meet|video\s*call)|create\s+(a\s+)?meet\s+link|meet\s+schedule|video\s+conference/i, { type: 'meet_schedule', label: 'Setting up your meeting', icon: '🎥' }],
   [/navigate\s+(to|using)|directions\s+(to|from)|maps?\s+navigate|how\s+(do|can)\s+I\s+(get\s+)?to/i, { type: 'maps_navigate', label: 'Finding directions', icon: '🗺️' }],
   [/scan|ocr|document\s+scan|scan\s+(a|this|the)\s+(document|page|paper|receipt)|document\s+vision/i, { type: 'document_scan', label: 'Opening media upload', icon: '📄' }],
@@ -87,6 +103,46 @@ export function getBeatriceOpening(task: TaskInfo, userName?: string): string {
       `I'm creating that document${name}. Setting up the perfect format for you.`,
       `Let me write that document${name}. I'll make it professional and clear.`,
       `Starting a new document for you${name}. Just a moment while I organize it.`,
+    ],
+    sheets: [
+      `I'm opening Sheets${name}. I'll handle the rows and ranges carefully.`,
+      `Working in your spreadsheet${name}. Let me update the data cleanly.`,
+      `Let me take care of that Sheet${name}. I'll keep the structure tidy.`,
+    ],
+    slides: [
+      `I'm opening Slides${name}. I'll shape the deck content now.`,
+      `Working on that presentation${name}. I'll keep it clean and structured.`,
+      `Let me build that slide work${name}. I'll prepare the deck update.`,
+    ],
+    tasks: [
+      `I'm checking your tasks${name}. Let me sync the list first.`,
+      `Working in Tasks${name}. I'll update the right item carefully.`,
+      `Let me handle that task${name}. I'll keep it in the correct list.`,
+    ],
+    people: [
+      `I'm searching your contacts${name}. Let me find the right person.`,
+      `Checking People${name}. I'll look through your saved contacts.`,
+      `Let me find that contact${name}. I'll match the details carefully.`,
+    ],
+    forms: [
+      `I'm opening Forms${name}. I'll build the questions cleanly.`,
+      `Working on that form${name}. I'll keep the structure easy to answer.`,
+      `Let me prepare the form${name}. I'll set up the fields now.`,
+    ],
+    translate: [
+      `I'm translating that${name}. I'll keep the meaning intact.`,
+      `Let me translate the text${name}. I'll preserve the important wording.`,
+      `Working on the translation${name}. I'll keep it clear and natural.`,
+    ],
+    chat: [
+      `I'm checking Google Chat${name}. Let me find the right space.`,
+      `Working in Chat${name}. I'll handle the message carefully.`,
+      `Let me open that chat space${name}. I'll prepare the update.`,
+    ],
+    youtube: [
+      `I'm searching YouTube${name}. I'll pull the useful results.`,
+      `Checking YouTube${name}. Let me get the relevant videos.`,
+      `Let me look that up on YouTube${name}. I'll bring back the key details.`,
     ],
     meet_schedule: [
       `I'm setting up your meeting${name}. Generating the video link and details.`,
@@ -142,6 +198,14 @@ export function getEngagementTimeout(task: TaskInfo): number {
     calendar_create: [600, 1500],
     drive_search: [500, 1200],
     docs_create: [800, 2000],
+    sheets: [700, 1600],
+    slides: [900, 2200],
+    tasks: [500, 1200],
+    people: [500, 1200],
+    forms: [900, 2200],
+    translate: [400, 1000],
+    chat: [600, 1500],
+    youtube: [500, 1300],
     meet_schedule: [600, 1400],
     maps_navigate: [500, 1200],
     document_scan: [800, 1800],

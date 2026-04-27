@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "verify:tools": "node scripts/verify-tool-routes.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

@@ -61,6 +61,215 @@ export type UseLiveApiResults = {
   setSpeakerMuted: (muted: boolean) => void;
 };
 
+type ToolExecutionPayload = {
+  status: string;
+  message: string;
+  data?: any;
+};
+
+const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+const getHeyGenIds = (payload: ToolExecutionPayload) => {
+  const data = payload.data || {};
+  return {
+    sessionId: data.sessionId || data.session_id,
+    videoId: data.videoId || data.video_id,
+  };
+};
+
+const isHeyGenVideoStart = (toolName: string, payload: ToolExecutionPayload) => {
+  const data = payload.data || {};
+  return toolName === 'video_generate' && data.provider === 'heygen' && (data.sessionId || data.session_id || data.videoId || data.video_id);
+};
+
+const buildHeyGenTaskResult = (payload: ToolExecutionPayload, message: string) => {
+  const data = payload.data || {};
+  const videoUrl = data.videoUrl || data.video_url;
+  const videoId = data.videoId || data.video_id;
+  const sessionId = data.sessionId || data.session_id;
+  return {
+    title: videoUrl ? 'HeyGen Video Ready' : 'HeyGen Video Rendering',
+    message,
+    artifactType: 'video' as const,
+    ...(videoUrl ? { previewData: videoUrl } : {}),
+    downloadFilename: videoUrl
+      ? `heygen_${videoId || 'video'}.mp4`
+      : `heygen_${sessionId || videoId || 'video_job'}.json`,
+    downloadData: videoUrl || JSON.stringify(payload, null, 2),
+    mimeType: videoUrl ? 'video/mp4' : 'application/json',
+  };
+};
+
+async function injectToolSpeech(
+  client: GenAILiveClient,
+  toolName: string,
+  spokenSummary: string,
+  payload: ToolExecutionPayload,
+) {
+  client.send([{
+    text: `[TOOL RESULT for ${toolName}]: Say this back naturally, in your own voice: "${spokenSummary}" Use the raw facts only if needed, and do not mention tool names. Raw facts: ${JSON.stringify(payload.data || {})}.`
+  }], true);
+}
+
+async function recordSystemToolResponse(payload: ToolExecutionPayload) {
+  const responseMessage = `Function call response:\n\`\`\`json\n${JSON.stringify(payload, null, 2)}\n\`\`\``;
+  useLogStore.getState().addTurn({ role: 'system', text: responseMessage, isFinal: true });
+
+  try {
+    await safeAddDoc(db, 'turns', {
+      user_id: getRuntimeUserIdentity().userId,
+      role: 'system',
+      text: responseMessage,
+      timestamp: serverTimestamp(),
+      type: 'tool_response',
+    });
+  } catch (e) {
+    console.error('Error saving tool response to Firebase:', e);
+  }
+}
+
+async function handleHeyGenVoiceVideo(
+  client: GenAILiveClient,
+  apiKey: string,
+  initialPayload: ToolExecutionPayload,
+): Promise<void> {
+  const processingStore = useProcessingStore.getState();
+  const initialSpeech = await formatToolResultSpeech(apiKey, 'video_generate', initialPayload);
+  await injectToolSpeech(client, 'video_generate', initialSpeech, initialPayload);
+  processingStore.setGoogleServiceResult(initialSpeech);
+  processingStore.addProcessingMessage({
+    id: `heygen_started_${Date.now()}`,
+    text: initialSpeech,
+    type: 'result',
+  });
+  useUI.getState().setTaskResult(buildHeyGenTaskResult(initialPayload, initialSpeech));
+  await recordSystemToolResponse(initialPayload);
+
+  let { sessionId, videoId } = getHeyGenIds(initialPayload);
+  const pollIntervalMs = Number(initialPayload.data?.pollIntervalMs) || 10000;
+  const maxWaitMs = 12 * 60 * 1000;
+  const deadline = Date.now() + maxWaitMs;
+  let lastStatus = String(initialPayload.data?.status || 'generating');
+  let lastProgress = Number(initialPayload.data?.progress);
+
+  processingStore.updateProcessingConsole(prev => {
+    const next = updateProcessingStep(prev, 'workspace', 'running', 'HeyGen accepted the request and is rendering the video');
+    if (!next) return next;
+    return {
+      ...next,
+      stage: 'running',
+      currentProcess: 'HeyGen video render in progress',
+      statusNote: initialSpeech,
+    };
+  });
+
+  while (Date.now() < deadline) {
+    await sleep(pollIntervalMs);
+    const statusPayload = await executeToolCall('video_status', {
+      sessionId,
+      videoId,
+    });
+    const data = statusPayload.data || {};
+    sessionId = data.sessionId || data.session_id || sessionId;
+    videoId = data.videoId || data.video_id || videoId;
+    lastStatus = data.status || statusPayload.status || lastStatus;
+    lastProgress = Number(data.progress);
+    const progressText = Number.isFinite(lastProgress)
+      ? `${lastProgress}%`
+      : lastStatus;
+
+    processingStore.setGoogleServiceResult(statusPayload.message);
+    useUI.getState().setTaskResult(buildHeyGenTaskResult(statusPayload, statusPayload.message));
+    processingStore.updateProcessingConsole(prev => {
+      const next = updateProcessingStep(prev, 'workspace', 'running', `HeyGen render status: ${progressText}`);
+      if (!next) return next;
+      return {
+        ...next,
+        stage: 'running',
+        currentProcess: `HeyGen render status: ${progressText}`,
+        statusNote: statusPayload.message,
+      };
+    });
+
+    const videoUrl = data.videoUrl || data.video_url;
+    if (statusPayload.status === 'success' && videoUrl) {
+      const finalSpeech = await formatToolResultSpeech(apiKey, 'video_generate', statusPayload);
+      await injectToolSpeech(client, 'video_generate', finalSpeech, statusPayload);
+      useUI.getState().setTaskResult(buildHeyGenTaskResult(statusPayload, finalSpeech));
+      processingStore.setGoogleServiceResult(finalSpeech);
+      processingStore.addProcessingMessage({
+        id: `heygen_ready_${Date.now()}`,
+        text: finalSpeech,
+        type: 'result',
+      });
+      processingStore.updateProcessingConsole(prev => {
+        let next = updateProcessingStep(prev, 'workspace', 'done', finalSpeech);
+        next = updateProcessingStep(next, 'model', 'done', 'Final video result injected into voice conversation');
+        next = updateProcessingStep(next, 'finalize', 'done', 'Video artifact is ready in the workspace panel');
+        if (!next) return next;
+        return {
+          ...next,
+          stage: 'completed',
+          currentProcess: 'HeyGen video ready',
+          statusNote: finalSpeech,
+        };
+      });
+      await recordSystemToolResponse(statusPayload);
+      window.setTimeout(() => {
+        useProcessingStore.getState().clearProcessing();
+      }, 8000);
+      return;
+    }
+
+    if (statusPayload.status === 'error') {
+      const failureSpeech = await formatToolResultSpeech(apiKey, 'video_generate', statusPayload);
+      await injectToolSpeech(client, 'video_generate', failureSpeech, statusPayload);
+      processingStore.setGoogleServiceResult(failureSpeech);
+      processingStore.addProcessingMessage({
+        id: `heygen_failed_${Date.now()}`,
+        text: failureSpeech,
+        type: 'result',
+      });
+      processingStore.updateProcessingConsole(prev => {
+        let next = updateProcessingStep(prev, 'workspace', 'error', failureSpeech);
+        next = updateProcessingStep(next, 'finalize', 'done', 'Failure reported to voice conversation');
+        if (!next) return next;
+        return {
+          ...next,
+          stage: 'failed',
+          currentProcess: 'HeyGen video failed',
+          statusNote: failureSpeech,
+        };
+      });
+      await recordSystemToolResponse(statusPayload);
+      window.setTimeout(() => {
+        useProcessingStore.getState().clearProcessing();
+      }, 8000);
+      return;
+    }
+  }
+
+  const timeoutPayload: ToolExecutionPayload = {
+    status: 'processing',
+    message: 'HeyGen is still rendering this video. The workspace panel will keep the job id so you can check it again.',
+    data: {
+      provider: 'heygen',
+      artifactType: 'video',
+      sessionId,
+      session_id: sessionId,
+      videoId,
+      video_id: videoId,
+      status: lastStatus,
+      progress: Number.isFinite(lastProgress) ? lastProgress : undefined,
+    },
+  };
+  const timeoutSpeech = await formatToolResultSpeech(apiKey, 'video_generate', timeoutPayload);
+  await injectToolSpeech(client, 'video_generate', timeoutSpeech, timeoutPayload);
+  processingStore.setGoogleServiceResult(timeoutSpeech);
+  useUI.getState().setTaskResult(buildHeyGenTaskResult(timeoutPayload, timeoutSpeech));
+  await recordSystemToolResponse(timeoutPayload);
+}
+
 export function useLiveApi({
   apiKey,
 }: {
@@ -285,7 +494,7 @@ export function useLiveApi({
 
       for (const fc of functionCalls) {
         const args = (fc.args ?? {}) as Record<string, any>;
-        const processingTaskInfo = getProcessingTaskInfoFromToolName(fc.name);
+        const processingTaskInfo = getProcessingTaskInfoFromToolName(fc.name ?? '');
 
         // Log the function call trigger
         const triggerMessage = `Triggering function call: **${fc.name}**\n\`\`\`json\n${JSON.stringify(fc.args, null, 2)}\n\`\`\``;
@@ -305,10 +514,15 @@ export function useLiveApi({
         }
 
         // Immediate ack — unblocks Beatrice to keep speaking
-        // Inject context instructions so Beatrice knows about active tasks and memory
+        const _userName2 = context.preferences.preferredAddress !== "User"
+          ? context.preferences.preferredAddress
+          : context.userDisplayName ?? undefined;
+        const _openingText2 = getBeatriceOpening(detectedTaskInfo, _userName2);
+        // Embed the engagement opening inside the ack so Beatrice speaks
+        // only ONE natural message instead of two separate texts.
         const ackMessage = contextInstruction
-          ? `${contextInstruction}\n\nI'm on it. Let me check that now.`
-          : `I'm on it. Let me check that now.`;
+          ? `${contextInstruction}\n\n${_openingText2}`
+          : _openingText2;
 
         ackResponses.push({
           id: fc.id,
@@ -322,18 +536,10 @@ export function useLiveApi({
         backgroundJobs.push({ fc, args, processingTaskInfo });
       }
 
-      // Send ack IMMEDIATELY — Beatrice can keep talking while tools run
+      // Send ack IMMEDIATELY — Beatrice can keep talking while tools run.
+      // The engagement opening is embedded inside the ack, so no separate
+      // text message is needed — eliminates the duplicate-speech problem.
       client.sendToolResponse({ functionResponses: ackResponses });
-
-      // ── Engagement: Send one short Beatrice opening while the tool processes ──
-      const userName = context.preferences.preferredAddress !== 'User'
-        ? context.preferences.preferredAddress
-        : context.userDisplayName ?? undefined;
-      const openingText = getBeatriceOpening(detectedTaskInfo, userName);
-
-      client.send([{
-        text: `[ENGAGEMENT]: ${openingText}`
-      }], true);
 
       // ── PHASE 2: Execute tools in background, inject result back ──
       // apiKey is already available from the hook parameter
@@ -375,7 +581,15 @@ export function useLiveApi({
             });
 
             // Execute the actual tool call via the background executor
-            const responsePayload = await executeToolCall(fc.name, args);
+            const toolArgs = fc.name === 'video_generate'
+              ? { ...args, enableBackgroundUiPoll: false }
+              : args;
+            const responsePayload = await executeToolCall(fc.name, toolArgs);
+
+            if (isHeyGenVideoStart(fc.name, responsePayload)) {
+              await handleHeyGenVoiceVideo(client, apiKey, responsePayload);
+              return;
+            }
 
             // Format the result into natural speech using a secondary Gemini model
             const spokenSummary = await formatToolResultSpeech(apiKey, fc.name, responsePayload);

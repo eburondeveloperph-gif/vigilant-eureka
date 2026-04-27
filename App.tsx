@@ -20,7 +20,7 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { onAuthStateChanged, User } from 'firebase/auth';
-import { auth, signInWithGoogle, logout, uploadImageToStorage } from './lib/firebase';
+import { auth, signInWithGoogle, isGoogleSignInCancelled, logout, uploadImageToStorage } from './lib/firebase';
 import { rtdb } from './lib/firebase';
 import { ref, set, onValue } from 'firebase/database';
 
@@ -49,6 +49,7 @@ import { useUserProfileStore } from './lib/user-profile-store';
 import { useLogStore, useProcessingStore, useSettings, useUI, systemPrompts } from './lib/state';
 import { recordTurn as recordHistoryTurn } from './lib/conversation-history';
 import { useScanChatBridge, type ScanChatPayload } from './lib/scan-chat-bridge';
+import { useVoiceChatBridge, type VoiceChatPayload } from './lib/voice-chat-bridge';
 import {
   useIntegrations,
   makeZapId,
@@ -219,6 +220,8 @@ function AppShell({ children }: { children: React.ReactNode }) {
   const [navHistory, setNavHistory] = useState<string[]>(['view-splash']);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [userLoaded, setUserLoaded] = useState(false);
+  const [authSigningIn, setAuthSigningIn] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
 
   // Chat state
   const [chatInput, setChatInput] = useState('');
@@ -364,6 +367,11 @@ function AppShell({ children }: { children: React.ReactNode }) {
 
   // ─── Router ──────────────────────
   const navigateTo = useCallback((target: string, clearHistory = false) => {
+    const activeElement = typeof document !== 'undefined' ? document.activeElement : null;
+    if (activeElement instanceof HTMLElement) {
+      activeElement.blur();
+    }
+
     setCurrentView(prev => {
       if (prev === target) return prev;
       // Clean up voice when leaving
@@ -378,6 +386,13 @@ function AppShell({ children }: { children: React.ReactNode }) {
     navigateTo('view-auth', true);
   }, [currentUser, currentView, navigateTo, userLoaded]);
 
+  useEffect(() => {
+    if (!userLoaded || !currentUser) return;
+    if (currentView === 'view-auth' || currentView === 'view-splash') {
+      navigateTo('view-home', true);
+    }
+  }, [currentUser, currentView, navigateTo, userLoaded]);
+
   // Auto-close the live-voice chat drawer when leaving the voice view so it
   // never lingers as a hidden overlay over other pages.
   useEffect(() => {
@@ -387,6 +402,11 @@ function AppShell({ children }: { children: React.ReactNode }) {
   }, [currentView]);
 
   const goBack = useCallback(() => {
+    const activeElement = typeof document !== 'undefined' ? document.activeElement : null;
+    if (activeElement instanceof HTMLElement) {
+      activeElement.blur();
+    }
+
     setNavHistory(h => {
       if (h.length > 1) {
         const newHistory = [...h];
@@ -398,6 +418,24 @@ function AppShell({ children }: { children: React.ReactNode }) {
       return h;
     });
   }, []);
+
+  const handleGoogleSignIn = useCallback(async () => {
+    if (authSigningIn) return;
+
+    setAuthError(null);
+    setAuthSigningIn(true);
+    try {
+      const signedInUser = await signInWithGoogle();
+      if (signedInUser) {
+        navigateTo('view-home', true);
+      }
+    } catch (error) {
+      if (isGoogleSignInCancelled(error)) return;
+      setAuthError(error instanceof Error ? error.message : 'Google sign-in failed.');
+    } finally {
+      setAuthSigningIn(false);
+    }
+  }, [authSigningIn, navigateTo]);
 
   // ─── Conversations ───────────────
   function createNewConversation(): Conversation {
@@ -518,7 +556,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
     setProcessingMessages([]);
 
     // 1) Show Beatrice opening message
-    const userName = profile?.preferred_name || currentUser?.displayName;
+    const userName = profile?.preferred_name || (currentUser?.displayName ?? undefined);
     const opening = getBeatriceOpening(taskInfo, userName);
     setProcessingMessages([{ id: 'opening_0', text: opening, type: 'opening' }]);
     updateProcessingConsoleState(prev => {
@@ -764,6 +802,9 @@ function AppShell({ children }: { children: React.ReactNode }) {
   const pendingScanForChat = useScanChatBridge(state => state.pending);
   const consumeScanForChat = useScanChatBridge(state => state.consume);
   const lastConsumedScanRef = useRef<string | null>(null);
+  const pendingVoiceForChat = useVoiceChatBridge(state => state.pending);
+  const consumeVoiceForChat = useVoiceChatBridge(state => state.consume);
+  const lastConsumedVoiceRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!pendingScanForChat) return;
@@ -815,6 +856,21 @@ function AppShell({ children }: { children: React.ReactNode }) {
     consumeScanForChat(payload.id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pendingScanForChat, currentView]);
+
+  useEffect(() => {
+    if (!pendingVoiceForChat) return;
+    if (lastConsumedVoiceRef.current === pendingVoiceForChat.id) return;
+    lastConsumedVoiceRef.current = pendingVoiceForChat.id;
+
+    const payload: VoiceChatPayload = pendingVoiceForChat;
+    if (currentView !== 'view-text') {
+      navigateTo('view-text');
+    }
+
+    void sendChatMessage(payload.text);
+    consumeVoiceForChat(payload.id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingVoiceForChat, currentView]);
 
   // ─── Media Generation ────────────
   async function sendMediaPrompt(input: string, prefix: string, setter: React.Dispatch<React.SetStateAction<{ role: string; content: string }[]>>) {
@@ -1275,12 +1331,19 @@ function AppShell({ children }: { children: React.ReactNode }) {
             <p style={{ fontSize: '14px', color: '#9ca3af' }}>Log in to continue with Beatrice</p>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-            <button onClick={() => signInWithGoogle().catch(e => alert('Sign-in error: ' + e.message))}
+            <button
+              onClick={handleGoogleSignIn}
+              disabled={authSigningIn}
               className="glass glass-btn"
-              style={{ width: '100%', borderRadius: '9999px', padding: '14px 16px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px', background: 'rgba(255,255,255,0.03)', backdropFilter: 'blur(16px)', border: '1px solid rgba(255,255,255,0.05)', color: 'white', fontSize: '15px', fontWeight: 500, cursor: 'pointer' }}>
+              style={{ width: '100%', borderRadius: '9999px', padding: '14px 16px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px', background: 'rgba(255,255,255,0.03)', backdropFilter: 'blur(16px)', border: '1px solid rgba(255,255,255,0.05)', color: 'white', fontSize: '15px', fontWeight: 500, cursor: authSigningIn ? 'wait' : 'pointer', opacity: authSigningIn ? 0.7 : 1 }}>
               <svg width="20" height="20" viewBox="0 0 24 24"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#fff"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#fff"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#fff"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#fff"/></svg>
-              <span>Continue with Google</span>
+              <span>{authSigningIn ? 'Opening Google...' : 'Continue with Google'}</span>
             </button>
+            {authError && (
+              <p role="alert" style={{ color: '#fca5a5', fontSize: '13px', margin: '-4px 8px 0', lineHeight: 1.4 }}>
+                {authError}
+              </p>
+            )}
             <button className="glass glass-btn"
               style={{ width: '100%', borderRadius: '9999px', padding: '14px 16px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px', opacity: 0.5, color: 'white', fontSize: '15px', fontWeight: 500, cursor: 'pointer' }}>
               <i className="ph-fill ph-apple-logo" style={{ fontSize: '20px' }}></i>
@@ -1309,14 +1372,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
         style={{ backgroundColor: '#0a0a0a' }}
         aria-hidden={currentView !== 'view-home'}>
         <div style={{ position: 'absolute', top: 0, left: 0, width: '300px', height: '300px', background: 'rgba(168,85,247,0.15)', borderRadius: '50%', filter: 'blur(80px)', pointerEvents: 'none' }} />
-        <div style={{ flex: 1, padding: '56px 24px 112px', overflowY: 'auto', position: 'relative', zIndex: 10, display: 'flex', flexDirection: 'column' }} className="no-scrollbar">
-          <nav style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', marginBottom: '24px' }}>
-            <button onClick={() => navigateTo('view-settings')} className="glass glass-btn"
-              title="Settings"
-              style={{ width: '40px', height: '40px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <i className="ph ph-gear" style={{ fontSize: '18px', color: '#9ca3af' }}></i>
-            </button>
-          </nav>
+        <div style={{ flex: 1, padding: '88px 24px 112px', overflowY: 'auto', position: 'relative', zIndex: 10, display: 'flex', flexDirection: 'column' }} className="no-scrollbar">
           <div onClick={() => navigateTo('view-profile')} style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '24px', cursor: 'pointer', width: 'max-content' }}>
             {currentUser?.photoURL ? (
               <img src={currentUser.photoURL} alt={displayName}
@@ -1372,9 +1428,9 @@ function AppShell({ children }: { children: React.ReactNode }) {
             </div>
             <ul style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
               {[
-                { icon: 'ph-fill ph-chat-text', color: '#d946ef', text: 'Explain quantum computing simply...' },
-                { icon: 'ph-fill ph-feather', color: '#a855f7', text: 'Write a poem about AI consciousness' },
-                { icon: 'ph-fill ph-map-pin', color: '#3b82f6', text: 'Help me plan a weekend itinerary for Tokyo' },
+                { icon: 'ph-fill ph-phone-call', color: '#22c55e', text: 'Call the Eburon AI call center' },
+                { icon: 'ph-fill ph-file-text', color: '#f59e0b', text: 'Scan and summarize a document' },
+                { icon: 'ph-fill ph-magnifying-glass', color: '#3b82f6', text: 'Search my Drive for Q4 reports' },
               ].map((item, i) => (
                 <li key={i}>
                   <button onClick={() => { navigateTo('view-text'); setTimeout(() => sendChatMessage(item.text), 100); }} className="glass glass-btn"
@@ -1399,12 +1455,23 @@ function AppShell({ children }: { children: React.ReactNode }) {
       
       {/* Global Header with orb — only on views without their own top
           navigation, otherwise the hamburger and orb overlap the page's
-          back button / title row. */}
+          back button / title row. The settings gear is now rendered here
+          (right side, parallel to the hamburger) instead of inside each
+          page's content. */}
       {(currentView === 'view-home' || currentView === 'view-voice') && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, zIndex: 1000 }}>
           <Header
             mode={currentView === 'view-voice' ? 'back' : 'menu'}
             onBack={goBack}
+            rightAction={
+              currentView === 'view-home'
+                ? {
+                    icon: 'ph ph-gear',
+                    title: 'Settings',
+                    onClick: () => navigateTo('view-settings'),
+                  }
+                : undefined
+            }
           />
         </div>
       )}
@@ -1514,6 +1581,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
               accept="*/*"
               onChange={handleChatFileChange}
               style={{ display: 'none' }}
+              title="Attach a file"
             />
             <input
               ref={chatCameraInputRef}
@@ -1522,6 +1590,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
               capture="environment"
               onChange={handleChatCameraChange}
               style={{ display: 'none' }}
+              title="Take a photo or video"
             />
             { /* Hidden image-picker input for Messenger-style direct image upload */ }
             <input
@@ -1530,6 +1599,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
               accept="image/*"
               onChange={handleChatImageChange}
               style={{ display: 'none' }}
+              title="Upload an image"
             />
             {pendingImage && (
               <div className="image-preview-pill" style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px', background: 'rgba(255,255,255,0.03)', borderRadius: '12px', padding: '6px 8px', border: '1px solid rgba(255,255,255,0.08)' }}>
@@ -1688,6 +1758,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
                 <div style={{ background: 'rgba(255,255,255,0.03)', backdropFilter: 'blur(16px)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '16px', padding: '16px', marginBottom: '16px' }}>
                   <label style={{ fontSize: '14px', color: '#d1d5db', marginBottom: '8px', display: 'block' }}>Text Chat System Prompt</label>
                   <textarea value={systemPrompt} onChange={e => setSystemPrompt(e.target.value)}
+                    title="Text Chat System Prompt"
                     style={{ width: '100%', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px', padding: '12px', fontSize: '14px', color: 'white', resize: 'none', height: '128px', outline: 'none', fontFamily: "'Outfit', sans-serif" }} />
                   <div style={{ color: '#9ca3af', fontSize: '12px', marginTop: '8px', lineHeight: 1.5 }}>
                     Gemini Live audio now uses a locked Beatrice system persona internally. This editor only affects the text chat experience.
@@ -1794,6 +1865,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
                 <div style={{ background: 'rgba(255,255,255,0.03)', backdropFilter: 'blur(16px)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '16px', padding: '16px', marginBottom: '16px' }}>
                   <label style={{ fontSize: '14px', color: '#d1d5db', marginBottom: '8px', display: 'block' }}>Voice Model</label>
                   <select value={liveVoice} onChange={e => setLiveVoice(e.target.value)}
+                    title="Voice Model"
                     style={{ width: '100%', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px', padding: '12px', fontSize: '14px', color: 'white', outline: 'none', appearance: 'none' }}>
                     {AVAILABLE_VOICES.map(v => (
                       <option key={v} value={v} style={{ backgroundColor: '#0a0a0a' }}>{v}</option>
@@ -1805,6 +1877,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
                     Temperature <span style={{ color: '#d946ef' }}>{tempValue.toFixed(1)}</span>
                   </label>
                   <input type="range" min="0" max="2" step="0.1" value={tempValue} onChange={e => setTempValue(parseFloat(e.target.value))}
+                    title="Temperature"
                     style={{ width: '100%', accentColor: '#d946ef' }} />
                 </div>
 
@@ -1820,12 +1893,13 @@ function AppShell({ children }: { children: React.ReactNode }) {
                   </p>
                   <label style={{ fontSize: '11px', color: '#9ca3af', display: 'block', marginBottom: '6px' }}>Upload Media or Document</label>
                   <div style={{ display: 'flex', gap: '8px' }}>
-                    <input
-                      type="file"
-                      accept="image/*,video/*,.pdf,.docx,.xlsx,.xls,.txt,.md,.csv,.json"
-                      style={{ display: 'none' }}
-                      id="knowledge-base-upload"
-                      onChange={async (e) => {
+                      <input
+                        type="file"
+                        accept="image/*,video/*,.pdf,.docx,.xlsx,.xls,.txt,.md,.csv,.json"
+                        style={{ display: 'none' }}
+                        id="knowledge-base-upload"
+                        title="Upload a file to the knowledge base"
+                        onChange={async (e) => {
                         const file = e.target.files?.[0];
                         if (!file) return;
 	                        try {
@@ -1886,7 +1960,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
                   </div>
                   <p className="integration-card-blurb">
                     Send WhatsApp messages by voice or chat using the Meta Cloud API. Add your <strong>Phone Number ID</strong> and an <strong>Access Token</strong> from{' '}
-                    <a href="https://developers.facebook.com/apps/" target="_blank" rel="noreferrer">Meta for Developers</a>. If browser CORS blocks the call, set a Proxy URL that forwards JSON to graph.facebook.com.
+                    <a href="https://developers.facebook.com/apps/" target="_blank" rel="noopener noreferrer">Meta for Developers</a>. If browser CORS blocks the call, set a Proxy URL that forwards JSON to graph.facebook.com.
                   </p>
 
                   <div className="integration-field">
@@ -2070,7 +2144,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
                   </div>
                   <p className="integration-card-blurb">
                     Run inference on a local Ollama server instead of the cloud. Install from{' '}
-                    <a href="https://ollama.ai" target="_blank" rel="noreferrer">ollama.ai</a> and start it with <code>ollama serve</code>.
+                    <a href="https://ollama.ai" target="_blank" rel="noopener noreferrer">ollama.ai</a> and start it with <code>ollama serve</code>.
                   </p>
 
                   <div className="integration-field">
@@ -2098,7 +2172,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
                       <div className="integration-toggle-row">
                         <span className="label">Use Local LLM for Chat</span>
                         <label className="integration-toggle">
-                          <input type="checkbox" checked={localCfg.enabled} onChange={e => ollamaHandleToggle(e.target.checked)} />
+                          <input type="checkbox" checked={localCfg.enabled} onChange={e => ollamaHandleToggle(e.target.checked)} title="Use Local LLM for Chat" />
                           <span className="track">
                             <span className="knob" />
                           </span>
@@ -2108,7 +2182,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
                       <div className="integration-field">
                         <label className="integration-field-label">Active Model</label>
                         <select value={localCfg.model} onChange={e => ollamaHandleModelChange(e.target.value)}
-                          className="integration-input">
+                          className="integration-input" title="Active Model">
                           <option value="">None selected</option>
                           {ollamaModels.map(m => (
                             <option key={m.name} value={m.name} style={{ backgroundColor: '#0a0a0a' }}>{m.name}</option>
@@ -2193,7 +2267,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
             <h3 style={{ fontSize: '18px', fontWeight: 500, color: 'white' }}>{displayName}</h3>
             <p style={{ fontSize: '14px', color: '#d946ef' }}>{currentUser?.email || profile?.email || 'Not signed in'}</p>
             <p style={{ fontSize: '12px', color: '#6b7280', marginTop: '4px' }}>
-              {currentUser?.metadata?.createdAt ? 'Member since ' + new Date(parseInt(currentUser.metadata.createdAt)).toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) : ''}
+              {(currentUser?.metadata as any)?.createdAt ? 'Member since ' + new Date(parseInt((currentUser?.metadata as any).createdAt)).toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) : ''}
             </p>
           </div>
 
@@ -2429,21 +2503,22 @@ function AppShell({ children }: { children: React.ReactNode }) {
         return (
           <nav id="bottom-nav"
             style={{
-              position: 'absolute',
-              bottom: '24px',
+              position: 'fixed',
+              bottom: 'calc(env(safe-area-inset-bottom, 0px) + 16px)',
               left: '50%',
               transform: 'translateX(-50%)',
-              width: '88%',
-              background: 'rgba(255,255,255,0.03)',
-              backdropFilter: 'blur(16px)',
-              WebkitBackdropFilter: 'blur(16px)',
-              border: '1px solid rgba(255,255,255,0.05)',
-              borderRadius: '24px',
-              padding: '12px 24px',
+              width: 'min(88%, 540px)',
+              background: 'rgba(15, 12, 22, 0.72)',
+              backdropFilter: 'blur(22px) saturate(140%)',
+              WebkitBackdropFilter: 'blur(22px) saturate(140%)',
+              border: '1px solid rgba(255,255,255,0.06)',
+              borderRadius: '28px',
+              padding: '10px 22px',
               display: 'flex',
               justifyContent: 'space-between',
               alignItems: 'center',
-              zIndex: 50,
+              zIndex: 1100,
+              boxShadow: '0 16px 40px -18px rgba(0, 0, 0, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.05)',
               opacity: navVisible ? 1 : 0,
               pointerEvents: navVisible ? 'auto' : 'none',
               transition: 'opacity 0.3s, transform 0.3s',

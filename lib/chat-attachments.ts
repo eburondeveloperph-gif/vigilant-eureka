@@ -382,7 +382,7 @@ export const buildChatPromptForAttachment = (
 // ── Gemini Vision describer ─────────────────────────────────────────────
 // When the user attaches a photo or screenshot, run it through Gemini Vision
 // so the text-only DeepSeek conversation can react meaningfully to images.
-const VISION_MODEL = 'gemini-2.5-flash';
+const VISION_MODEL = 'gemini-2.5-flash-native-audio-preview-09-2025';
 const VISION_SYSTEM_PROMPT =
   'You are an image-reading assistant. Describe the photo concisely (3-6 sentences). Include any visible text verbatim, identify objects, people, scenes, and note anything that looks important. Do not editorialise.';
 

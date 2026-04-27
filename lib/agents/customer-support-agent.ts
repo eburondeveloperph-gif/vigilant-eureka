@@ -68,6 +68,27 @@ export const handle: AgentHandler = async (toolName, args, _ctx): Promise<AgentR
       };
     }
 
+    case 'call_representative': {
+      const reason = typeof args.reason === 'string' ? args.reason.trim() : '';
+      if (!reason) {
+        return {
+          status: 'error',
+          message: 'Please tell me briefly what the representative should help with.',
+        };
+      }
+      // Open the native phone dialer with the Eburon AI call center number
+      try {
+        window.open('tel:+18447560329', '_self');
+      } catch {
+        // Fallback if window.open fails — the phone number is still in the message
+      }
+      return {
+        status: 'success',
+        message: `Dialing the Eburon AI call center at +1 (844) 756 0329 with your note: "${reason}". Please wait while we connect you.`,
+        data: { reason, phoneNumber: '+18447560329', dialed: true },
+      };
+    }
+
     default:
       return { status: 'error', message: `Customer support agent does not support tool: ${toolName}` };
   }

@@ -3,7 +3,7 @@ import "./dashboard.css";
 
 export const Dashboard: FC = () => {
   const [meterValues, setMeterValues] = useState({ input: 0, output: 0 });
-  const animFrameRef = useRef<number>();
+  const animFrameRef = useRef<number | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(true);
   const [phase, setPhase] = useState(0);

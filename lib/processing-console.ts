@@ -22,6 +22,14 @@ export type ProcessingServiceKey =
   | 'calendar'
   | 'drive'
   | 'docs'
+  | 'sheets'
+  | 'slides'
+  | 'tasks'
+  | 'people'
+  | 'forms'
+  | 'translate'
+  | 'chat'
+  | 'youtube'
   | 'meet'
   | 'maps'
   | 'scanner'
@@ -94,6 +102,70 @@ export const PROCESSING_SERVICE_VISUALS: Record<ProcessingServiceKey, Processing
     accent: '#4285F4',
     mode: 'lines',
     loadingLabel: 'Parsing Structure',
+  },
+  sheets: {
+    title: 'Sheets',
+    scope: 'auth/spreadsheets',
+    icon: 'ph-fill ph-table',
+    accent: '#0F9D58',
+    mode: 'grid',
+    loadingLabel: 'Updating Cells',
+  },
+  slides: {
+    title: 'Slides',
+    scope: 'auth/presentations',
+    icon: 'ph-fill ph-presentation-chart',
+    accent: '#F4B400',
+    mode: 'flip',
+    loadingLabel: 'Building Deck',
+  },
+  tasks: {
+    title: 'Tasks',
+    scope: 'auth/tasks',
+    icon: 'ph-fill ph-check-square',
+    accent: '#4285F4',
+    mode: 'scan',
+    loadingLabel: 'Syncing Tasks',
+  },
+  people: {
+    title: 'People',
+    scope: 'auth/contacts',
+    icon: 'ph-fill ph-users-three',
+    accent: '#7C3AED',
+    mode: 'bubbles',
+    loadingLabel: 'Searching Contacts',
+  },
+  forms: {
+    title: 'Forms',
+    scope: 'auth/forms',
+    icon: 'ph-fill ph-list-checks',
+    accent: '#673AB7',
+    mode: 'lines',
+    loadingLabel: 'Composing Form',
+  },
+  translate: {
+    title: 'Translate',
+    scope: 'cloud/translate',
+    icon: 'ph-fill ph-translate',
+    accent: '#06B6D4',
+    mode: 'wave',
+    loadingLabel: 'Translating Text',
+  },
+  chat: {
+    title: 'Chat',
+    scope: 'auth/chat',
+    icon: 'ph-fill ph-chat-centered-text',
+    accent: '#34A853',
+    mode: 'bubbles',
+    loadingLabel: 'Opening Space',
+  },
+  youtube: {
+    title: 'YouTube',
+    scope: 'youtube/v3',
+    icon: 'ph-fill ph-youtube-logo',
+    accent: '#FF0000',
+    mode: 'buffer',
+    loadingLabel: 'Loading Results',
   },
   meet: {
     title: 'Meet',
@@ -173,6 +245,22 @@ export function getProcessingServiceKeys(task: ProcessingTaskInfo): ProcessingSe
       return ['drive', 'model'];
     case 'docs_create':
       return ['docs', 'model'];
+    case 'sheets':
+      return ['sheets', 'model'];
+    case 'slides':
+      return ['slides', 'model'];
+    case 'tasks':
+      return ['tasks', 'model'];
+    case 'people':
+      return ['people', 'model'];
+    case 'forms':
+      return ['forms', 'model'];
+    case 'translate':
+      return ['translate', 'model'];
+    case 'chat':
+      return ['chat', 'model'];
+    case 'youtube':
+      return ['youtube', 'model'];
     case 'meet_schedule':
       return ['calendar', 'meet', 'model'];
     case 'maps_navigate':
@@ -264,6 +352,30 @@ export function getProcessingTaskInfoFromToolName(toolName: string): ProcessingT
   }
   if (normalized.includes('docs')) {
     return { type: 'docs_create', label: 'Executing Docs task', icon: '📝' };
+  }
+  if (normalized.includes('sheets')) {
+    return { type: 'sheets', label: 'Executing Sheets task', icon: '📊' };
+  }
+  if (normalized.includes('slides')) {
+    return { type: 'slides', label: 'Executing Slides task', icon: '📽️' };
+  }
+  if (normalized.includes('tasks')) {
+    return { type: 'tasks', label: 'Executing Tasks task', icon: '✅' };
+  }
+  if (normalized.includes('people')) {
+    return { type: 'people', label: 'Executing People task', icon: '👥' };
+  }
+  if (normalized.includes('forms')) {
+    return { type: 'forms', label: 'Executing Forms task', icon: '📋' };
+  }
+  if (normalized.includes('translate')) {
+    return { type: 'translate', label: 'Executing Translate task', icon: '🌐' };
+  }
+  if (normalized.includes('chat')) {
+    return { type: 'chat', label: 'Executing Chat task', icon: '💬' };
+  }
+  if (normalized.includes('youtube')) {
+    return { type: 'youtube', label: 'Executing YouTube task', icon: '▶️' };
   }
   if (normalized.includes('meet')) {
     return { type: 'meet_schedule', label: 'Executing Meet task', icon: '🎥' };

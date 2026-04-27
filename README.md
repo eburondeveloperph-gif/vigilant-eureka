@@ -15,6 +15,9 @@ View your app in AI Studio: https://ai.studio/apps/c8dac667-93c2-4cfa-a958-28f00
 
 1. Install dependencies:
    `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
+2. Set the required keys in `.env.local`:
+   - `GEMINI_API_KEY` for Gemini Live voice conversations
+   - `DEEPGRAM_API_KEY` for realtime speech-to-text through the local `/api/deepgram/listen` WebSocket proxy
+   - `HEYGEN_API_KEY` for HeyGen v3 video generation through the local `/api/heygen` proxy
 3. Run the app:
    `npm run dev`

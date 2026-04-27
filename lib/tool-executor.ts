@@ -19,7 +19,7 @@ import { GoogleGenAI } from '@google/genai';
 import { buildConversationContext, type ConversationContext } from './conversation-context';
 import { dispatchToAgent } from './agents';
 
-const TOOL_EXECUTOR_MODEL = 'gemini-2.5-flash';
+const TOOL_EXECUTOR_MODEL = 'gemini-2.5-flash-native-audio-preview-09-2025';
 
 const RESULT_FORMATTER_PROMPT = `You are Beatrice's background result formatter. Given a tool name and its raw API result, produce a SHORT, NATURAL, HUMAN-SOUNDING spoken update that Beatrice can say aloud.
 
@@ -34,12 +34,33 @@ Rules:
 - Be warm, calm, and specific`;
 
 let genaiInstance: GoogleGenAI | null = null;
+let formatterCooldownUntil = 0;
+let formatterRateLimitWarnedAt = 0;
 
 function getGenAI(apiKey: string): GoogleGenAI {
   if (!genaiInstance) {
     genaiInstance = new GoogleGenAI({ apiKey });
   }
   return genaiInstance;
+}
+
+function isRateLimitError(error: unknown) {
+  const maybeError = error as { status?: unknown; code?: unknown; message?: unknown };
+  const status = Number(maybeError?.status || maybeError?.code);
+  const message = String(maybeError?.message || error || '').toLowerCase();
+  return status === 429
+    || message.includes('429')
+    || message.includes('rate limit')
+    || message.includes('quota')
+    || message.includes('resource_exhausted');
+}
+
+function startFormatterCooldown(error: unknown) {
+  formatterCooldownUntil = Date.now() + 90_000;
+  if (Date.now() - formatterRateLimitWarnedAt > 30_000) {
+    formatterRateLimitWarnedAt = Date.now();
+    console.warn('Background formatter hit Gemini rate limit; using raw tool messages briefly.', error);
+  }
 }
 
 /**
@@ -86,6 +107,10 @@ export async function formatToolResultSpeech(
   toolName: string,
   rawResult: { status: string; message: string; data?: any },
 ): Promise<string> {
+  if (Date.now() < formatterCooldownUntil) {
+    return rawResult.message;
+  }
+
   try {
     const ai = getGenAI(apiKey);
     const response = await ai.models.generateContent({
@@ -100,6 +125,10 @@ export async function formatToolResultSpeech(
     const text = response.text?.trim();
     return text || rawResult.message;
   } catch (e) {
+    if (isRateLimitError(e)) {
+      startFormatterCooldown(e);
+      return rawResult.message;
+    }
     console.warn('Background formatter failed, using raw message:', e);
     return rawResult.message;
   }

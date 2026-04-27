@@ -1,5 +1,11 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth, GoogleAuthProvider, signInWithPopup, signOut } from 'firebase/auth';
+import {
+  getAuth,
+  GoogleAuthProvider,
+  signInWithPopup,
+  signOut,
+  type User,
+} from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 import { getDatabase } from 'firebase/database';
 import {
@@ -106,7 +112,10 @@ const GOOGLE_SERVICE_SCOPES = [
   'https://www.googleapis.com/auth/forms.body',
   'https://www.googleapis.com/auth/forms.responses.readonly',
   'https://www.googleapis.com/auth/chat.spaces',
+  'https://www.googleapis.com/auth/chat.spaces.readonly',
   'https://www.googleapis.com/auth/chat.messages',
+  'https://www.googleapis.com/auth/chat.messages.create',
+  'https://www.googleapis.com/auth/chat.messages.readonly',
   'https://www.googleapis.com/auth/tasks',
   'https://www.googleapis.com/auth/youtube',
 ];
@@ -118,14 +127,25 @@ googleProvider.setCustomParameters({
   include_granted_scopes: 'true',
 });
 
-export const signInWithGoogle = async () => {
+const GOOGLE_SIGN_IN_CANCEL_CODES = new Set([
+  'auth/popup-closed-by-user',
+  'auth/cancelled-popup-request',
+]);
+
+export const isGoogleSignInCancelled = (error: unknown) => {
+  if (!error || typeof error !== 'object' || !('code' in error)) return false;
+  return GOOGLE_SIGN_IN_CANCEL_CODES.has(String((error as { code?: unknown }).code));
+};
+
+export const signInWithGoogle = async (): Promise<User | null> => {
   try {
     const result = await signInWithPopup(auth, googleProvider);
     const credential = GoogleAuthProvider.credentialFromResult(result);
     storeGoogleAccessToken(credential?.accessToken);
     return result.user;
   } catch (error) {
-    console.error("Error signing in with Google", error);
+    if (isGoogleSignInCancelled(error)) return null;
+    console.error('Error signing in with Google', error);
     throw error;
   }
 };

@@ -55,6 +55,10 @@ const isTemporaryModelError = (error: unknown) => {
     message.includes('"code":503') ||
     message.includes('"status":"UNAVAILABLE"') ||
     message.includes('high demand') ||
+    message.includes('"code":429') ||
+    message.includes('"status":"RESOURCE_EXHAUSTED"') ||
+    message.includes('quota') ||
+    message.includes('rate limit') ||
     message.includes('"code":404') ||
     message.includes('"status":"NOT_FOUND"')
   );

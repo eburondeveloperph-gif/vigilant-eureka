@@ -313,7 +313,7 @@ function turnsToTranscript(turns: HistoryTurn[]): string {
     .join('\n');
 }
 
-const SUMMARIZER_MODEL = 'gemini-2.5-flash';
+const SUMMARIZER_MODEL = 'gemini-2.5-flash-native-audio-preview-09-2025';
 const SUMMARIZER_PROMPT = `You compress a transcript of past conversations between a user and Beatrice (the user's voice assistant) into a short, useful long-term memory digest.
 
 Output rules:
@@ -325,10 +325,28 @@ Output rules:
 - If a turn looks ambiguous, leave it out rather than guessing
 - Plain text, no Markdown headers, no quotes around bullets`;
 
+let summarizerCooldownUntil = 0;
+let summarizerRateLimitWarnedAt = 0;
+
+function isRateLimitError(error: unknown) {
+  const maybeError = error as { status?: unknown; code?: unknown; message?: unknown };
+  const status = Number(maybeError?.status || maybeError?.code);
+  const message = String(maybeError?.message || error || '').toLowerCase();
+  return status === 429
+    || message.includes('429')
+    || message.includes('rate limit')
+    || message.includes('quota')
+    || message.includes('resource_exhausted');
+}
+
 async function summarizeWithGemini(
   apiKey: string,
   transcript: string,
 ): Promise<string> {
+  if (Date.now() < summarizerCooldownUntil) {
+    return '';
+  }
+
   try {
     const { GoogleGenAI } = await import('@google/genai');
     const ai = new GoogleGenAI({ apiKey });
@@ -344,6 +362,14 @@ async function summarizeWithGemini(
     const text = (response.text || '').trim();
     return text;
   } catch (e) {
+    if (isRateLimitError(e)) {
+      summarizerCooldownUntil = Date.now() + 90_000;
+      if (Date.now() - summarizerRateLimitWarnedAt > 30_000) {
+        summarizerRateLimitWarnedAt = Date.now();
+        console.warn('Conversation history summarizer hit Gemini rate limit; using local transcript briefly.', e);
+      }
+      return '';
+    }
     console.warn('Conversation history summarizer failed:', e);
     return '';
   }

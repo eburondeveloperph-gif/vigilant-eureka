@@ -70,4 +70,20 @@ export const customerSupportTools: FunctionCall[] = [
     isEnabled: true,
     scheduling: FunctionResponseScheduling.WHEN_IDLE,
   },
+  {
+    name: 'call_representative',
+    description: 'Dials the Eburon AI call center at +1 (844) 756 0329 to connect the user with a live human representative.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        reason: {
+          type: 'STRING',
+          description: 'A brief summary of the user\'s issue for the representative.',
+        },
+      },
+      required: ['reason'],
+    },
+    isEnabled: true,
+    scheduling: FunctionResponseScheduling.INTERRUPT,
+  },
 ];

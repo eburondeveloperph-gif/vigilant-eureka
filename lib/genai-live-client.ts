@@ -76,6 +76,7 @@ export class GenAILiveClient extends EventEmitter<LiveClientEventTypes> {
   protected session?: Session;
 
   private _status: 'connected' | 'disconnected' | 'connecting' = 'disconnected';
+  private connectionId = 0;
   public get status() {
     return this._status;
   }
@@ -99,12 +100,13 @@ export class GenAILiveClient extends EventEmitter<LiveClientEventTypes> {
       return false;
     }
 
+    const connectionId = ++this.connectionId;
     this._status = 'connecting';
     const callbacks: LiveCallbacks = {
-      onopen: this.onOpen.bind(this),
-      onmessage: this.onMessage.bind(this),
-      onerror: this.onError.bind(this),
-      onclose: this.onClose.bind(this),
+      onopen: () => this.onOpen(connectionId),
+      onmessage: message => this.onMessage(message, connectionId),
+      onerror: error => this.onError(error, connectionId),
+      onclose: event => this.onClose(event, connectionId),
     };
 
     try {
@@ -117,13 +119,20 @@ export class GenAILiveClient extends EventEmitter<LiveClientEventTypes> {
       });
     } catch (e: any) {
       console.error('Error connecting to GenAI Live:', e);
-      this._status = 'disconnected';
-      this.session = undefined;
+      if (connectionId === this.connectionId) {
+        this._status = 'disconnected';
+        this.session = undefined;
+      }
       const errorEvent = new ErrorEvent('error', {
         error: e,
         message: e?.message || 'Failed to connect.',
       });
-      this.onError(errorEvent);
+      this.onError(errorEvent, connectionId);
+      return false;
+    }
+
+    if (connectionId !== this.connectionId) {
+      this.session?.close();
       return false;
     }
 
@@ -132,21 +141,39 @@ export class GenAILiveClient extends EventEmitter<LiveClientEventTypes> {
   }
 
   public disconnect() {
-    this.session?.close();
+    const session = this.session;
+    const readyState = this.getSessionReadyState(session);
+    this.connectionId += 1;
     this.session = undefined;
     this._status = 'disconnected';
+
+    if (
+      session &&
+      (readyState === undefined ||
+        readyState === WebSocket.CONNECTING ||
+        readyState === WebSocket.OPEN)
+    ) {
+      try {
+        session.close();
+      } catch (e: any) {
+        console.warn('Live session close failed:', e?.message);
+      }
+    }
 
     this.log('client.close', `Disconnected`);
     return true;
   }
 
   public send(parts: Part | Part[], turnComplete: boolean = true) {
-    if (this._status !== 'connected' || !this.session) {
-      this.emit('error', new ErrorEvent('Client is not connected'));
+    if (!this.isSessionOpen()) {
+      this.log('client.send.skipped', 'Live session is not open');
       return;
     }
+    const session = this.session;
+    if (!session) return;
+    if (!this.isSessionOpen(session)) return;
     try {
-      this.session.sendClientContent({ turns: parts, turnComplete });
+      session.sendClientContent({ turns: parts, turnComplete });
     } catch (e: any) {
       console.warn('send failed (connection may have closed):', e?.message);
     }
@@ -154,14 +181,15 @@ export class GenAILiveClient extends EventEmitter<LiveClientEventTypes> {
   }
 
   public sendRealtimeInput(chunks: Array<{ mimeType: string; data: string }>) {
-    if (this._status !== 'connected' || !this.session) {
-      this.emit('error', new ErrorEvent('Client is not connected'));
+    if (!this.isSessionOpen()) {
+      this.log('client.realtimeInput.skipped', 'Live session is not open');
       return;
     }
     // Snapshot the session so the forEach works even if disconnect() nulls it mid-iteration
     const session = this.session;
+    if (!session) return;
     chunks.forEach(chunk => {
-      if (this._status !== 'connected') return;
+      if (!this.isSessionOpen(session)) return;
       try {
         session.sendRealtimeInput({ media: chunk });
       } catch (e: any) {
@@ -186,16 +214,19 @@ export class GenAILiveClient extends EventEmitter<LiveClientEventTypes> {
   }
 
   public sendToolResponse(toolResponse: LiveClientToolResponse) {
-    if (this._status !== 'connected' || !this.session) {
-      this.emit('error', new ErrorEvent('Client is not connected'));
+    if (!this.isSessionOpen()) {
+      this.log('client.toolResponse.skipped', 'Live session is not open');
       return;
     }
+    const session = this.session;
+    if (!session) return;
+    if (!this.isSessionOpen(session)) return;
     if (
       toolResponse.functionResponses &&
       toolResponse.functionResponses.length
     ) {
       try {
-        this.session.sendToolResponse({
+        session.sendToolResponse({
           functionResponses: toolResponse.functionResponses!,
         });
       } catch (e: any) {
@@ -206,7 +237,26 @@ export class GenAILiveClient extends EventEmitter<LiveClientEventTypes> {
     this.log(`client.toolResponse`, { toolResponse });
   }
 
-  protected onMessage(message: LiveServerMessage) {
+  private getSessionReadyState(session = this.session) {
+    const conn = (session as unknown as { conn?: { ws?: { readyState?: number } } } | undefined)?.conn;
+    return typeof conn?.ws?.readyState === 'number' ? conn.ws.readyState : undefined;
+  }
+
+  private isSessionOpen(session = this.session) {
+    if (this._status !== 'connected' || !session || session !== this.session) return false;
+
+    const readyState = this.getSessionReadyState(session);
+    if (readyState !== undefined && readyState !== WebSocket.OPEN) {
+      this._status = 'disconnected';
+      return false;
+    }
+
+    return true;
+  }
+
+  protected onMessage(message: LiveServerMessage, connectionId = this.connectionId) {
+    if (connectionId !== this.connectionId) return;
+
     if (message.setupComplete) {
       this.emit('setupcomplete');
       return;
@@ -287,7 +337,9 @@ export class GenAILiveClient extends EventEmitter<LiveClientEventTypes> {
     }
   }
 
-  protected onError(e: ErrorEvent) {
+  protected onError(e: ErrorEvent, connectionId = this.connectionId) {
+    if (connectionId !== this.connectionId) return;
+
     this._status = 'disconnected';
     console.error('error:', e);
 
@@ -296,12 +348,16 @@ export class GenAILiveClient extends EventEmitter<LiveClientEventTypes> {
     this.emit('error', e);
   }
 
-  protected onOpen() {
+  protected onOpen(connectionId = this.connectionId) {
+    if (connectionId !== this.connectionId) return;
+
     this._status = 'connected';
     this.emit('open');
   }
 
-  protected onClose(e: CloseEvent) {
+  protected onClose(e: CloseEvent, connectionId = this.connectionId) {
+    if (connectionId !== this.connectionId) return;
+
     this._status = 'disconnected';
     let reason = e.reason || '';
     if (reason.toLowerCase().includes('error')) {

@@ -100,6 +100,14 @@ The user has wired up Zapier "Catch Hook" zaps that you can trigger in voice. Tr
 - Pass the user's intent in the payload object (e.g. {message: "...", channel: "general"}). Do not over-structure — Zapier maps fields by name on the receiving side.
 - If no zap matches, say so plainly and offer to do something else.
 
+EXTENDED GOOGLE WORKSPACE RULES
+
+When the user asks for spreadsheets, presentations, tasks, contacts, forms, translations, Google Chat spaces, or YouTube lookups, use the matching connected tool before answering. Do not claim that a sheet, deck, form, task, contact, chat message, translation, or video lookup exists unless the tool returned it.
+
+HEYGEN VIDEO RULES
+
+When the user asks you to create or render a video, call video_generate from the live voice/tool path. Report that rendering started, then rely on video_status updates before saying the video is ready. Never claim a video is ready until the tool returns a video URL. When the user asks for recent or previous HeyGen video agent sessions, call video_list_sessions.
+
 These integrations are usable both during a live voice call AND in chat. Always confirm destructive or irreversible actions in one short sentence first.
 `;
 
@@ -213,6 +221,36 @@ export interface FunctionCall {
   scheduling?: FunctionResponseScheduling;
 }
 
+const cloneTool = (tool: FunctionCall): FunctionCall => ({
+  ...tool,
+  parameters: tool.parameters
+    ? JSON.parse(JSON.stringify(tool.parameters))
+    : tool.parameters,
+});
+
+const reconcileToolsForTemplate = (
+  template: Template,
+  existingTools: FunctionCall[] = [],
+): FunctionCall[] => {
+  const defaults = toolsets[template] || beatriceTools;
+  const existingByName = new Map(existingTools.map(tool => [tool.name, tool]));
+  const defaultNames = new Set(defaults.map(tool => tool.name));
+
+  const reconciledDefaults = defaults.map(defaultTool => {
+    const existing = existingByName.get(defaultTool.name);
+    return {
+      ...cloneTool(defaultTool),
+      isEnabled: existing?.isEnabled ?? defaultTool.isEnabled,
+    };
+  });
+
+  const customTools = existingTools
+    .filter(tool => !defaultNames.has(tool.name))
+    .map(cloneTool);
+
+  return [...reconciledDefaults, ...customTools];
+};
+
 
 
 export const useTools = create<{
@@ -226,10 +264,10 @@ export const useTools = create<{
 }>()(
   persist(
     set => ({
-      tools: beatriceTools,
+      tools: reconcileToolsForTemplate('beatrice', beatriceTools),
       template: 'beatrice',
       setTemplate: (template: Template) => {
-        set({ tools: toolsets[template], template });
+        set({ tools: reconcileToolsForTemplate(template, toolsets[template]), template });
         useSettings.getState().setSystemPrompt(systemPrompts[template]);
       },
       toggleTool: (toolName: string) =>
@@ -283,7 +321,22 @@ export const useTools = create<{
           };
         }),
     }),
-    { name: 'beatrice-tools-v1' },
+    {
+      name: 'beatrice-tools-v1',
+      merge: (persisted, current) => {
+        const persistedState = persisted as Partial<{
+          tools: FunctionCall[];
+          template: Template;
+        }> | null;
+        const template = persistedState?.template || current.template;
+        return {
+          ...current,
+          ...persistedState,
+          template,
+          tools: reconcileToolsForTemplate(template, persistedState?.tools || current.tools),
+        };
+      },
+    },
   ),
 );
 
