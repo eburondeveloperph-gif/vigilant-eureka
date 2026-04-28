@@ -357,6 +357,11 @@ function AppShell({ children }: { children: React.ReactNode }) {
         void MemoryService.syncRemoteIntoLocal();
       } else {
         clearProfile();
+        setHistoryLoading(false);
+        setHistoryError(null);
+        setConversations([]);
+        setActiveConvId(null);
+        setChatMessages([]);
       }
       // Seed /files into memory for ALL users (including local-dev) so the
       // knowledge base is always available to Beatrice from the first message.
@@ -469,6 +474,8 @@ function AppShell({ children }: { children: React.ReactNode }) {
   }
 
   function loadUserConversations(user: User) {
+    setHistoryLoading(true);
+    setHistoryError(null);
     const convRef = ref(rtdb, 'users/' + user.uid + '/conversations');
     onValue(convRef, (snap) => {
       const data = snap.val();
@@ -476,15 +483,23 @@ function AppShell({ children }: { children: React.ReactNode }) {
         const convs = Object.values(data) as Conversation[];
         convs.sort((a, b) => b.updatedAt - a.updatedAt);
         setConversations(convs);
-        if (convs.length > 0) {
-          setActiveConvId(convs[0].id);
-          setChatMessages(convs[0].messages || []);
-        } else {
-          createNewConversation();
+        setHistoryLoading(false);
+        if (!activeConvId) {
+          const firstWithMessages = convs.find(conv => conv.messages?.length);
+          const firstConversation = firstWithMessages || convs[0];
+          if (firstConversation) {
+            setActiveConvId(firstConversation.id);
+            setChatMessages(firstConversation.messages || []);
+          }
         }
       } else {
+        setHistoryLoading(false);
         createNewConversation();
       }
+    }, (error) => {
+      console.warn('Conversation history load failed:', error);
+      setHistoryLoading(false);
+      setHistoryError('Could not load conversation history.');
     });
     // Load system prompt — sync to both local state AND useSettings (for Sidebar)
     const promptRef = ref(rtdb, 'users/' + user.uid + '/systemPrompt');
