@@ -661,7 +661,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
         headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + DEEPSEEK_KEY },
         body: JSON.stringify({
           messages: apiMessages,
-          model: 'deepseek-chat',
+          model: 'eburon-chat',
           max_tokens: 2048,
           stream: true,
           temperature: tempValue,
@@ -886,7 +886,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
             { role: 'system', content: prefix + '. You are Beatrice, a creative AI assistant.' },
             { role: 'user', content: input }
           ],
-          model: 'deepseek-chat',
+          model: 'eburon-chat',
           max_tokens: 1024,
           temperature: 0.8
         })

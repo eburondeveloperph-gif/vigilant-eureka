@@ -225,7 +225,7 @@ export const PROCESSING_SERVICE_VISUALS: Record<ProcessingServiceKey, Processing
   },
   model: {
     title: 'Reasoning',
-    scope: 'deepseek-chat',
+    scope: 'eburon-chat',
     icon: 'ph-fill ph-cpu',
     accent: '#c084fc',
     mode: 'wave',
