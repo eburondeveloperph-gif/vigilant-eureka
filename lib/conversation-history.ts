@@ -376,9 +376,16 @@ async function summarizeWithGemini(
 }
 
 function pickApiKey(): string | undefined {
-  const env: Record<string, string | undefined> =
+  const viteEnv = (import.meta.env as Record<string, string | undefined>) || {};
+  const processEnv: Record<string, string | undefined> =
     (typeof process !== 'undefined' ? (process as any).env : {}) || {};
-  return env.GEMINI_API_KEY || env.API_KEY || undefined;
+  return (
+    viteEnv.VITE_GEMINI_API_KEY ||
+    viteEnv.GEMINI_API_KEY ||
+    processEnv.GEMINI_API_KEY ||
+    processEnv.API_KEY ||
+    undefined
+  );
 }
 
 export interface LoadHistoryOptions {

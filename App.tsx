@@ -18,9 +18,9 @@
  * limitations under the License.
  */
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { onAuthStateChanged, User } from 'firebase/auth';
-import { auth, signInWithGoogle, isGoogleSignInCancelled, logout, uploadImageToStorage } from './lib/firebase';
+import { auth, signInWithGoogle, isGoogleSignInCancelled, logout, uploadImageToStorage, uploadAvatarToStorage, updateUserPhotoURL } from './lib/firebase';
 import { rtdb } from './lib/firebase';
 import { ref, set, onValue } from 'firebase/database';
 
@@ -57,7 +57,7 @@ import {
   type ZapierZap,
 } from './lib/integrations-store';
 import { applyConversationalBase } from './lib/prompts/conversational-base';
-import { AVAILABLE_VOICES } from './lib/constants';
+import { AVAILABLE_VOICES, getVoicePersonaLabel } from './lib/constants';
 import { detectTaskType, getBeatriceOpening, getNextEntertainment, getEngagementTimeout } from './lib/task-engagement';
 import { DriveKnowledgeService } from './lib/document/drive-knowledge-service';
 import { MemoryService } from './lib/document/memory-service';
@@ -236,6 +236,8 @@ function AppShell({ children }: { children: React.ReactNode }) {
   }, [settingsSystemPrompt]);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConvId, setActiveConvId] = useState<string | null>(null);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState<string | null>(null);
 
   // Image/Video
   const [imageInput, setImageInput] = useState('');
@@ -247,10 +249,18 @@ function AppShell({ children }: { children: React.ReactNode }) {
   const [pendingImage, setPendingImage] = useState<{ file: File; previewUrl: string } | null>(null);
   const chatImageInputRef = useRef<HTMLInputElement>(null);
 
+  const historyConversations = useMemo(
+    () => conversations.filter(conv => Array.isArray(conv.messages) && conv.messages.length > 0),
+    [conversations],
+  );
+
   // Profile edit
   const [showEditProfile, setShowEditProfile] = useState(false);
   const [editName, setEditName] = useState('');
   const [editAddress, setEditAddress] = useState('');
+  const [avatarUploading, setAvatarUploading] = useState(false);
+  const [avatarError, setAvatarError] = useState<string | null>(null);
+  const profileAvatarInputRef = useRef<HTMLInputElement>(null);
   const liveVoice = useSettings(state => state.voice);
   const setLiveVoice = useSettings(state => state.setVoice);
   const toggleSidebar = useUI(state => state.toggleSidebar);
@@ -319,6 +329,8 @@ function AppShell({ children }: { children: React.ReactNode }) {
 
   const loadProfile = useUserProfileStore(state => state.loadProfile);
   const submitProfile = useUserProfileStore(state => state.submitOnboarding);
+  const saveBeatriceSystemPrompt = useUserProfileStore(state => state.saveBeatriceSystemPrompt);
+  const saveAvatarUrl = useUserProfileStore(state => state.saveAvatarUrl);
   const clearProfile = useUserProfileStore(state => state.clearProfile);
   const isProcessingTask = useProcessingStore(state => state.isProcessingTask);
   const currentTaskInfo = useProcessingStore(state => state.currentTaskInfo);
@@ -392,6 +404,12 @@ function AppShell({ children }: { children: React.ReactNode }) {
       navigateTo('view-home', true);
     }
   }, [currentUser, currentView, navigateTo, userLoaded]);
+
+  useEffect(() => {
+    if (!profile?.beatrice_system_prompt) return;
+    setSystemPrompt(profile.beatrice_system_prompt);
+    useSettings.getState().setSystemPrompt(profile.beatrice_system_prompt);
+  }, [profile?.beatrice_system_prompt]);
 
   // Auto-close the live-voice chat drawer when leaving the voice view so it
   // never lingers as a hidden overlay over other pages.
@@ -472,7 +490,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
     const promptRef = ref(rtdb, 'users/' + user.uid + '/systemPrompt');
     onValue(promptRef, (snap) => {
       const val = snap.val();
-      if (val) {
+      if (val && !useUserProfileStore.getState().profile?.beatrice_system_prompt) {
         setSystemPrompt(val);
         useSettings.getState().setSystemPrompt(val);
       }
@@ -902,6 +920,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
   // ─── Profile Save ────────────────
   const displayName = profile?.preferred_name || currentUser?.displayName || 'Associate';
   const preferredAddress = profile?.preferred_address || displayName;
+  const avatarUrl = profile?.avatar_url || currentUser?.photoURL || '';
   const avatarInitials = displayName
     .split(/\s+/)
     .filter(Boolean)
@@ -935,6 +954,39 @@ function AppShell({ children }: { children: React.ReactNode }) {
       });
     }
     setShowEditProfile(false);
+  }
+
+  async function handleAvatarChange(file?: File | null) {
+    if (!file || avatarUploading) return;
+    if (!file.type.startsWith('image/')) {
+      setAvatarError('Choose an image file.');
+      return;
+    }
+    if (!currentUser) {
+      setAvatarError('Sign in to update your avatar.');
+      return;
+    }
+
+    setAvatarUploading(true);
+    setAvatarError(null);
+    try {
+      const url = await uploadAvatarToStorage(currentUser.uid, file);
+      await saveAvatarUrl(url);
+      await updateUserPhotoURL(currentUser, url);
+      await set(ref(rtdb, 'users/' + currentUser.uid + '/profile'), {
+        preferred_name: profile?.preferred_name || currentUser.displayName || 'Associate',
+        preferred_address: profile?.preferred_address || profile?.preferred_name || currentUser.displayName || 'Associate',
+        avatar_url: url,
+        updated_at: Date.now(),
+      });
+      setCurrentUser(auth.currentUser);
+    } catch (error) {
+      console.error('Avatar upload failed:', error);
+      setAvatarError(error instanceof Error ? error.message : 'Avatar upload failed.');
+    } finally {
+      setAvatarUploading(false);
+      if (profileAvatarInputRef.current) profileAvatarInputRef.current.value = '';
+    }
   }
 
   const handleLogout = useCallback(async () => {
@@ -1374,8 +1426,8 @@ function AppShell({ children }: { children: React.ReactNode }) {
         <div style={{ position: 'absolute', top: 0, left: 0, width: '300px', height: '300px', background: 'rgba(168,85,247,0.15)', borderRadius: '50%', filter: 'blur(80px)', pointerEvents: 'none' }} />
         <div style={{ flex: 1, padding: '88px 24px 112px', overflowY: 'auto', position: 'relative', zIndex: 10, display: 'flex', flexDirection: 'column' }} className="no-scrollbar">
           <div onClick={() => navigateTo('view-profile')} style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '24px', cursor: 'pointer', width: 'max-content' }}>
-            {currentUser?.photoURL ? (
-              <img src={currentUser.photoURL} alt={displayName}
+            {avatarUrl ? (
+              <img src={avatarUrl} alt={displayName}
                 style={{ width: '44px', height: '44px', borderRadius: '50%', border: '1px solid rgba(255,255,255,0.2)', objectFit: 'cover' }} />
             ) : (
               <div aria-label={displayName}
@@ -1510,7 +1562,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
               <i className="ph ph-clock-counter-clockwise" style={{ fontSize: '18px', color: '#9ca3af' }}></i>
             </button>
           </nav>
-          <div ref={chatRef} style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '20px', padding: '16px 24px' }} className="no-scrollbar">
+          <div ref={chatRef} style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', display: 'flex', flexDirection: 'column', gap: '20px', padding: '16px 24px' }} className="no-scrollbar mobile-chat-history">
             {chatMessages.length === 0 ? (
               <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#6b7280', fontSize: '14px' }}>
                 <div style={{ textAlign: 'center' }}>
@@ -1572,7 +1624,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
             } else {
               await sendChatMessage();
             }
-          }} style={{ background: 'rgba(10,10,10,0.95)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)', padding: '12px 24px 16px', position: 'sticky', bottom: 0, zIndex: 60, borderTop: '1px solid rgba(255,255,255,0.05)' }}>
+          }} className="mobile-chat-composer" style={{ background: 'rgba(10,10,10,0.95)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)', padding: '12px 24px 16px', position: 'sticky', bottom: 0, zIndex: 60, borderTop: '1px solid rgba(255,255,255,0.05)' }}>
             {/* Hidden file pickers. Paperclip = any file. Camera =
                 normal photo/video capture. Both go through extractChatAttachment(). */}
             <input
@@ -1617,12 +1669,13 @@ function AppShell({ children }: { children: React.ReactNode }) {
                 Reading attachment…
               </div>
             )}
-            <div style={{ background: 'rgba(255,255,255,0.03)', borderRadius: '9999px', display: 'flex', alignItems: 'center', padding: '6px 6px 6px 12px', gap: '4px' }}>
+            <div className="mobile-chat-input-grid" style={{ background: 'rgba(255,255,255,0.03)', borderRadius: '9999px', display: 'grid', gridTemplateColumns: '32px 32px 32px minmax(0, 1fr) 36px', alignItems: 'center', padding: '6px 6px 6px 10px', gap: '4px', width: '100%', maxWidth: '100%', overflow: 'hidden' }}>
               <button
                 type="button"
                 onClick={handleChatAttachClick}
                 disabled={attachmentLoading}
                 title="Attach any file — PDF, DOCX, XLSX, CSV, PPTX, image, text — Beatrice reads it and adds it to your knowledgebase."
+                aria-label="Attach file"
                 style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, border: 'none', cursor: attachmentLoading ? 'wait' : 'pointer', color: '#9ca3af', opacity: attachmentLoading ? 0.5 : 1 }}>
                 <i className="ph ph-paperclip" style={{ fontSize: '18px' }}></i>
               </button>
@@ -1631,6 +1684,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
                 onClick={handleChatCamera}
                 disabled={attachmentLoading}
                 title="Take a photo/video or pick media — images get vision/object detection and media uploads to Drive."
+                aria-label="Open camera"
                 style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, border: 'none', cursor: attachmentLoading ? 'wait' : 'pointer', color: '#9ca3af', opacity: attachmentLoading ? 0.5 : 1 }}>
                 <i className="ph ph-camera" style={{ fontSize: '18px' }}></i>
               </button>
@@ -1638,12 +1692,15 @@ function AppShell({ children }: { children: React.ReactNode }) {
                 type="button"
                 onClick={handleChatImagePick}
                 title="Send an image — Messenger-style quick image upload"
+                aria-label="Pick image"
                 style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, border: 'none', cursor: 'pointer', color: '#9ca3af' }}>
                 <i className="ph ph-image" style={{ fontSize: '18px' }}></i>
               </button>
               <input type="text" placeholder="Message Beatrice..." value={chatInput} onChange={e => setChatInput(e.target.value)}
-                style={{ background: 'transparent', border: 'none', outline: 'none', fontSize: '14px', flex: 1, minWidth: 0, color: '#d1d5db', padding: '0 8px' }} />
+                aria-label="Message Beatrice"
+                style={{ background: 'transparent', border: 'none', outline: 'none', fontSize: '14px', width: '100%', minWidth: 0, color: '#d1d5db', padding: '0 8px' }} />
               <button type="submit"
+                aria-label="Send message"
                 style={{ width: '36px', height: '36px', borderRadius: '50%', backgroundColor: '#d946ef', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, border: 'none', cursor: 'pointer' }}>
                 <i className="ph-fill ph-arrow-up" style={{ color: 'white', fontSize: '14px' }}></i>
               </button>
@@ -1756,13 +1813,10 @@ function AppShell({ children }: { children: React.ReactNode }) {
             {settingsTab === 'general' && (
               <>
                 <div style={{ background: 'rgba(255,255,255,0.03)', backdropFilter: 'blur(16px)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '16px', padding: '16px', marginBottom: '16px' }}>
-                  <label style={{ fontSize: '14px', color: '#d1d5db', marginBottom: '8px', display: 'block' }}>Text Chat System Prompt</label>
+                  <label style={{ fontSize: '14px', color: '#d1d5db', marginBottom: '8px', display: 'block' }}>Beatrice Persona Prompt</label>
                   <textarea value={systemPrompt} onChange={e => setSystemPrompt(e.target.value)}
-                    title="Text Chat System Prompt"
+                    title="Beatrice Persona Prompt"
                     style={{ width: '100%', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px', padding: '12px', fontSize: '14px', color: 'white', resize: 'none', height: '128px', outline: 'none', fontFamily: "'Outfit', sans-serif" }} />
-                  <div style={{ color: '#9ca3af', fontSize: '12px', marginTop: '8px', lineHeight: 1.5 }}>
-                    Gemini Live audio now uses a locked Beatrice system persona internally. This editor only affects the text chat experience.
-                  </div>
                   <div style={{ display: 'flex', gap: '8px', marginTop: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
                     <button
                       disabled={systemPromptSaveStatus.kind === 'saving'}
@@ -1781,11 +1835,12 @@ function AppShell({ children }: { children: React.ReactNode }) {
                           return;
                         }
                         try {
+                          await saveBeatriceSystemPrompt(value);
                           await Promise.race([
                             set(ref(rtdb, 'users/' + currentUser.uid + '/systemPrompt'), value),
                             new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 6000)),
                           ]);
-                          flashSystemPromptStatus({ kind: 'saved-cloud', message: 'Saved to cloud.' });
+                          flashSystemPromptStatus({ kind: 'saved-cloud', message: 'Saved to user profile.' });
                         } catch (e) {
                           console.warn('Cloud system-prompt sync failed (kept locally):', e);
                           flashSystemPromptStatus({
@@ -1805,7 +1860,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
                         cursor: systemPromptSaveStatus.kind === 'saving' ? 'wait' : 'pointer',
                         opacity: systemPromptSaveStatus.kind === 'saving' ? 0.85 : 1,
                       }}>
-                      {systemPromptSaveStatus.kind === 'saving' ? 'Saving…' : 'Save'}
+                      {systemPromptSaveStatus.kind === 'saving' ? 'Saving…' : 'Save Persona'}
                     </button>
                     <button
                       disabled={systemPromptSaveStatus.kind === 'saving'}
@@ -1822,11 +1877,12 @@ function AppShell({ children }: { children: React.ReactNode }) {
                           return;
                         }
                         try {
+                          await saveBeatriceSystemPrompt(DEFAULT_SYSTEM_PROMPT);
                           await Promise.race([
                             set(ref(rtdb, 'users/' + currentUser.uid + '/systemPrompt'), DEFAULT_SYSTEM_PROMPT),
                             new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 6000)),
                           ]);
-                          flashSystemPromptStatus({ kind: 'saved-cloud', message: 'Reset and synced.' });
+                          flashSystemPromptStatus({ kind: 'saved-cloud', message: 'Reset and saved to user profile.' });
                         } catch (e) {
                           console.warn('Cloud reset sync failed (kept locally):', e);
                           flashSystemPromptStatus({
@@ -1863,12 +1919,12 @@ function AppShell({ children }: { children: React.ReactNode }) {
                   </div>
                 </div>
                 <div style={{ background: 'rgba(255,255,255,0.03)', backdropFilter: 'blur(16px)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '16px', padding: '16px', marginBottom: '16px' }}>
-                  <label style={{ fontSize: '14px', color: '#d1d5db', marginBottom: '8px', display: 'block' }}>Voice Model</label>
+                  <label style={{ fontSize: '14px', color: '#d1d5db', marginBottom: '8px', display: 'block' }}>Voice Persona</label>
                   <select value={liveVoice} onChange={e => setLiveVoice(e.target.value)}
-                    title="Voice Model"
+                    title="Voice Persona"
                     style={{ width: '100%', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px', padding: '12px', fontSize: '14px', color: 'white', outline: 'none', appearance: 'none' }}>
                     {AVAILABLE_VOICES.map(v => (
-                      <option key={v} value={v} style={{ backgroundColor: '#0a0a0a' }}>{v}</option>
+                      <option key={v} value={v} style={{ backgroundColor: '#0a0a0a' }}>{getVoicePersonaLabel(v)}</option>
                     ))}
                   </select>
                 </div>
@@ -2241,7 +2297,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
         style={{ backgroundColor: '#0a0a0a' }}
         aria-hidden={currentView !== 'view-profile'}>
         <div style={{ position: 'absolute', top: 0, right: 0, width: '300px', height: '300px', background: 'rgba(236,72,153,0.15)', borderRadius: '50%', filter: 'blur(80px)', pointerEvents: 'none' }} />
-        <div style={{ flex: 1, padding: '56px 24px 48px', overflowY: 'auto', position: 'relative', zIndex: 10, display: 'flex', flexDirection: 'column' }} className="no-scrollbar">
+        <div style={{ flex: 1, padding: '56px 24px calc(env(safe-area-inset-bottom, 0px) + 132px)', overflowY: 'auto', overflowX: 'hidden', position: 'relative', zIndex: 10, display: 'flex', flexDirection: 'column' }} className="no-scrollbar">
           <nav style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', flexShrink: 0 }}>
             <button onClick={goBack} className="glass glass-btn"
               style={{ width: '40px', height: '40px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
@@ -2255,17 +2311,41 @@ function AppShell({ children }: { children: React.ReactNode }) {
             </button>
           </nav>
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: '24px' }}>
-            {currentUser?.photoURL ? (
-              <img src={currentUser.photoURL} alt={displayName}
-                style={{ width: '96px', height: '96px', borderRadius: '50%', border: '4px solid #171717', marginBottom: '16px', objectFit: 'cover' }} />
-            ) : (
-              <div aria-label={displayName}
-                style={{ width: '96px', height: '96px', borderRadius: '50%', border: '4px solid #171717', marginBottom: '16px', background: 'linear-gradient(135deg, #d946ef, #7e22ce)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontSize: '28px', fontWeight: 700 }}>
-                {avatarInitials}
-              </div>
-            )}
+            <input
+              ref={profileAvatarInputRef}
+              type="file"
+              accept="image/*"
+              title="Choose avatar image"
+              style={{ display: 'none' }}
+              onChange={e => void handleAvatarChange(e.target.files?.[0])}
+            />
+            <div style={{ position: 'relative', width: '104px', height: '104px', marginBottom: '16px' }}>
+              {avatarUrl ? (
+                <img src={avatarUrl} alt={displayName}
+                  style={{ width: '104px', height: '104px', borderRadius: '50%', border: '4px solid #171717', objectFit: 'cover', display: 'block' }} />
+              ) : (
+                <div aria-label={displayName}
+                  style={{ width: '104px', height: '104px', borderRadius: '50%', border: '4px solid #171717', background: 'linear-gradient(135deg, #d946ef, #7e22ce)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontSize: '28px', fontWeight: 700 }}>
+                  {avatarInitials}
+                </div>
+              )}
+              <button
+                type="button"
+                onClick={() => profileAvatarInputRef.current?.click()}
+                disabled={avatarUploading}
+                aria-label="Edit profile avatar"
+                title="Edit profile avatar"
+                style={{ position: 'absolute', right: '0', bottom: '0', width: '34px', height: '34px', borderRadius: '50%', border: '1px solid rgba(255,255,255,0.16)', background: '#d946ef', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: avatarUploading ? 'wait' : 'pointer', boxShadow: '0 10px 24px rgba(0,0,0,0.35)' }}>
+                <i className={avatarUploading ? 'ph ph-spinner-gap' : 'ph ph-camera'} style={{ fontSize: '16px' }}></i>
+              </button>
+            </div>
             <h3 style={{ fontSize: '18px', fontWeight: 500, color: 'white' }}>{displayName}</h3>
             <p style={{ fontSize: '14px', color: '#d946ef' }}>{currentUser?.email || profile?.email || 'Not signed in'}</p>
+            {avatarError && (
+              <p role="alert" style={{ fontSize: '12px', color: '#fca5a5', marginTop: '8px', textAlign: 'center', maxWidth: '100%', overflowWrap: 'anywhere' }}>
+                {avatarError}
+              </p>
+            )}
             <p style={{ fontSize: '12px', color: '#6b7280', marginTop: '4px' }}>
               {(currentUser?.metadata as any)?.createdAt ? 'Member since ' + new Date(parseInt((currentUser?.metadata as any).createdAt)).toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) : ''}
             </p>
@@ -2320,7 +2400,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
             </div>
           )}
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: 'auto' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: 'auto', paddingBottom: '8px' }}>
             <button onClick={() => navigateTo('view-settings')} className="glass glass-btn"
               style={{ width: '100%', borderRadius: '16px', padding: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', textAlign: 'left', cursor: 'pointer' }}>
               <span style={{ display: 'flex', alignItems: 'center', gap: '12px', fontSize: '14px', fontWeight: 500, color: 'white' }}>
@@ -2337,7 +2417,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
             </button>
           </div>
           <button onClick={handleLogout} className="glass glass-btn"
-            style={{ marginTop: '24px', width: '100%', borderRadius: '16px', padding: '16px', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', color: '#f87171', cursor: 'pointer' }}>
+            style={{ marginTop: '12px', marginBottom: '8px', width: '100%', borderRadius: '16px', padding: '16px', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', color: '#f87171', cursor: 'pointer' }}>
             <i className="ph ph-sign-out" style={{ fontSize: '18px' }}></i>
             <span style={{ fontSize: '14px', fontWeight: 500 }}>Log Out</span>
           </button>
@@ -2507,16 +2587,19 @@ function AppShell({ children }: { children: React.ReactNode }) {
               bottom: 'calc(env(safe-area-inset-bottom, 0px) + 16px)',
               left: '50%',
               transform: 'translateX(-50%)',
-              width: 'min(88%, 540px)',
+              width: 'calc(100vw - 32px)',
+              maxWidth: '540px',
               background: 'rgba(15, 12, 22, 0.72)',
               backdropFilter: 'blur(22px) saturate(140%)',
               WebkitBackdropFilter: 'blur(22px) saturate(140%)',
               border: '1px solid rgba(255,255,255,0.06)',
               borderRadius: '28px',
-              padding: '10px 22px',
-              display: 'flex',
-              justifyContent: 'space-between',
+              padding: '10px clamp(10px, 4vw, 22px)',
+              display: 'grid',
+              gridTemplateColumns: 'repeat(5, minmax(0, 1fr))',
               alignItems: 'center',
+              justifyItems: 'center',
+              overflow: 'clip',
               zIndex: 1100,
               boxShadow: '0 16px 40px -18px rgba(0, 0, 0, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.05)',
               opacity: navVisible ? 1 : 0,

@@ -4,6 +4,7 @@ import {
   GoogleAuthProvider,
   signInWithPopup,
   signOut,
+  updateProfile,
   type User,
 } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
@@ -159,6 +160,10 @@ export const logout = async () => {
   }
 };
 
+export const updateUserPhotoURL = async (user: User, photoURL: string) => {
+  await updateProfile(user, { photoURL });
+};
+
 /**
  * Upload an image file to Firebase Storage and return the download URL.
  * Organises under chat-images/{userId}/ for easy management.
@@ -173,6 +178,13 @@ export async function uploadImageToStorage(
     ? `chat-images/${userId}/${conversationId}/img_${Date.now()}.${ext}`
     : `chat-images/${userId}/img_${Date.now()}.${ext}`;
   const ref = storageRef(storage, path);
+  const snapshot = await uploadBytes(ref, file);
+  return getDownloadURL(snapshot.ref);
+}
+
+export async function uploadAvatarToStorage(userId: string, file: File): Promise<string> {
+  const ext = file.name.split('.').pop() || 'jpg';
+  const ref = storageRef(storage, `avatars/${userId}/avatar_${Date.now()}.${ext}`);
   const snapshot = await uploadBytes(ref, file);
   return getDownloadURL(snapshot.ref);
 }

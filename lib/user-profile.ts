@@ -7,6 +7,8 @@ export interface UserProfile {
   auth_display_name: string | null;
   preferred_name: string;
   preferred_address: string;
+  avatar_url?: string | null;
+  beatrice_system_prompt?: string | null;
   relationship_to_jo: 'associate' | 'principal';
   onboarding_completed: boolean;
   created_at: string;
@@ -111,6 +113,46 @@ export const UserProfileService = {
       preferred_name: input.preferred_name.trim() || existing.preferred_name,
       preferred_address: input.preferred_address.trim() || input.preferred_name.trim() || existing.preferred_address,
       onboarding_completed: true,
+      updated_at: nowIso(),
+    };
+
+    writeLocalProfile(next);
+
+    if (signedIn) {
+      await safeSetDoc(db, 'user_profiles', userId, next as unknown as Record<string, unknown>);
+    }
+
+    return next;
+  },
+
+  async saveBeatriceSystemPrompt(prompt: string) {
+    const { userId, email, displayName, signedIn } = getRuntimeUserIdentity();
+    const existing = (await this.loadProfile()) || makeDefaultProfile(userId, email, displayName);
+    const next: UserProfile = {
+      ...existing,
+      email,
+      auth_display_name: displayName,
+      beatrice_system_prompt: prompt.trim() || null,
+      updated_at: nowIso(),
+    };
+
+    writeLocalProfile(next);
+
+    if (signedIn) {
+      await safeSetDoc(db, 'user_profiles', userId, next as unknown as Record<string, unknown>);
+    }
+
+    return next;
+  },
+
+  async saveAvatarUrl(avatarUrl: string) {
+    const { userId, email, displayName, signedIn } = getRuntimeUserIdentity();
+    const existing = (await this.loadProfile()) || makeDefaultProfile(userId, email, displayName);
+    const next: UserProfile = {
+      ...existing,
+      email,
+      auth_display_name: displayName,
+      avatar_url: avatarUrl,
       updated_at: nowIso(),
     };
 

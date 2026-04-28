@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type FC } from "react";
+import { AVAILABLE_VOICES, getVoicePersonaLabel } from "../../lib/constants";
 import "./dashboard.css";
 
 export const Dashboard: FC = () => {
@@ -188,7 +189,7 @@ export const Dashboard: FC = () => {
         <div className="px-6 py-6 border-b border-white/5 flex items-center justify-between sticky top-0 bg-[#0E1015] z-20">
           <div className="flex items-center gap-3">
             <div className="w-2.5 h-2.5 bg-emerald-400 rounded-full shadow-[0_0_8px_rgba(52,211,153,0.8)]" />
-            <h2 className="font-medium text-lg text-white">Beatrice Hub</h2>
+            <h2 className="font-medium text-lg text-white">Voice Integrations</h2>
           </div>
           <div className="flex items-center gap-2">
             <button className="p-2 border border-white/10 rounded-full hover:bg-white/5 text-gray-400 transition">
@@ -229,9 +230,9 @@ export const Dashboard: FC = () => {
           <div className="flex flex-col gap-2">
             <label className="text-xs font-medium text-gray-400 tracking-wide">Voice Persona</label>
             <select defaultValue="Aoede" className="w-full bg-[#181A24] border border-white/10 rounded-lg px-4 py-3 text-sm text-white appearance-none focus:outline-none focus:border-blue-500/50 transition cursor-pointer">
-              <option>Aoede</option>
-              <option>Calliope</option>
-              <option>Clio</option>
+              {AVAILABLE_VOICES.map(voice => (
+                <option key={voice} value={voice}>{getVoicePersonaLabel(voice)}</option>
+              ))}
             </select>
           </div>
 

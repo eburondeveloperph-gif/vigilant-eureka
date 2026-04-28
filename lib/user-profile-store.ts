@@ -13,6 +13,8 @@ interface UserProfileState {
   setDraftPreferredName: (value: string) => void;
   setDraftPreferredAddress: (value: string) => void;
   submitOnboarding: (input?: Partial<UserProfileInput>) => Promise<UserProfile>;
+  saveBeatriceSystemPrompt: (prompt: string) => Promise<UserProfile>;
+  saveAvatarUrl: (avatarUrl: string) => Promise<UserProfile>;
   clearProfile: () => void;
 }
 
@@ -49,6 +51,20 @@ export const useUserProfileStore = create<UserProfileState>((set, get) => ({
       draftPreferredName: profile.preferred_name,
       draftPreferredAddress: profile.preferred_address,
     });
+    return profile;
+  },
+  saveBeatriceSystemPrompt: async prompt => {
+    const profile = await UserProfileService.saveBeatriceSystemPrompt(prompt);
+    set({
+      profile,
+      draftPreferredName: profile.preferred_name,
+      draftPreferredAddress: profile.preferred_address,
+    });
+    return profile;
+  },
+  saveAvatarUrl: async avatarUrl => {
+    const profile = await UserProfileService.saveAvatarUrl(avatarUrl);
+    set({ profile });
     return profile;
   },
   clearProfile: () =>

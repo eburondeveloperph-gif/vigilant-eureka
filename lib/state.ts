@@ -112,9 +112,9 @@ These integrations are usable both during a live voice call AND in chat. Always 
 `;
 
 export const systemPrompts: Record<Template, string> = {
-  'customer-support': 'You are a helpful and friendly customer support agent. Be conversational and concise.',
-  'personal-assistant': 'You are a helpful and friendly personal assistant. Be proactive and efficient.',
-  'navigation-system': 'You are a helpful and friendly navigation assistant. Provide clear and accurate directions.',
+  'customer-support': EBURON_AI_SYSTEM_PROMPT,
+  'personal-assistant': EBURON_AI_SYSTEM_PROMPT,
+  'navigation-system': EBURON_AI_SYSTEM_PROMPT,
   'beatrice': EBURON_AI_SYSTEM_PROMPT,
 };
 import { DEFAULT_LIVE_API_MODEL, DEFAULT_VOICE } from './constants';
@@ -266,9 +266,12 @@ export const useTools = create<{
     set => ({
       tools: reconcileToolsForTemplate('beatrice', beatriceTools),
       template: 'beatrice',
-      setTemplate: (template: Template) => {
-        set({ tools: reconcileToolsForTemplate(template, toolsets[template]), template });
-        useSettings.getState().setSystemPrompt(systemPrompts[template]);
+      setTemplate: (_template: Template) => {
+        set(state => ({
+          tools: reconcileToolsForTemplate('beatrice', state.tools),
+          template: 'beatrice',
+        }));
+        useSettings.getState().setSystemPrompt(systemPrompts.beatrice);
       },
       toggleTool: (toolName: string) =>
         set(state => ({
@@ -328,7 +331,7 @@ export const useTools = create<{
           tools: FunctionCall[];
           template: Template;
         }> | null;
-        const template = persistedState?.template || current.template;
+        const template: Template = 'beatrice';
         return {
           ...current,
           ...persistedState,

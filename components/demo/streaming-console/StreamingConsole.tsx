@@ -10,7 +10,7 @@ import ControlTray from '../../console/control-tray/ControlTray';
 import TestLogViewer from '../../TestLogViewer';
 // FIX: Import LiveServerContent to correctly type the content handler.
 import { LiveServerContent, Modality } from '@google/genai';
-import { buildBeatriceLiveSystemPrompt, BEATRICE_ON_TOP_PERSONA } from '@/lib/prompts/beatrice';
+import { buildBeatriceLiveSystemPrompt } from '@/lib/prompts/beatrice';
 import { VoiceCommandRouter } from '@/lib/document/voice-command-router';
 import { MemoryService } from '@/lib/document/memory-service';
 import { OCRService } from '@/lib/document/ocr-service';
@@ -168,7 +168,7 @@ export default function StreamingConsole() {
     setSpeakerMuted
   } = useLiveAPIContext();
   const { systemPrompt, voice } = useSettings();
-  const { tools, template } = useTools();
+  const { tools } = useTools();
   const {
     isGeneratingTask,
     activeCueUrl,
@@ -252,9 +252,11 @@ export default function StreamingConsole() {
     // Universal conversational base wraps every persona — Beatrice and any
     // custom one in equal measure — so "speak like a real human" rules apply
     // before the persona overlay tweaks tone/identity.
-    const personaSystemPrompt = template === 'beatrice'
-      ? buildBeatriceLiveSystemPrompt(UserProfileService.buildProfilePrompt(profile), undefined, BEATRICE_ON_TOP_PERSONA)
-      : systemPrompt;
+    const personaSystemPrompt = buildBeatriceLiveSystemPrompt(
+      UserProfileService.buildProfilePrompt(profile),
+      undefined,
+      systemPrompt,
+    );
     const finalSystemPrompt = applyConversationalBase(personaSystemPrompt);
 
     const config = {
@@ -281,7 +283,7 @@ export default function StreamingConsole() {
     };
 
     setConfig(config);
-  }, [setConfig, systemPrompt, tools, voice, template, profile]);
+  }, [setConfig, systemPrompt, tools, voice, profile]);
 
   const handleDeepgramUserTranscript = useCallback(async (text: string, isFinal: boolean) => {
     const trimmed = text.trim();
@@ -1192,7 +1194,7 @@ export default function StreamingConsole() {
 
 
       {/* Bottom Controls */}
-      <div style={styles.bottomControls}>
+      <div className="voice-bottom-controls" style={styles.bottomControls}>
         <input
           ref={nativePhotoInputRef}
           type="file"
@@ -1332,7 +1334,7 @@ export default function StreamingConsole() {
           )}
         </div>
 
-        <div style={styles.chatInputArea}>
+        <div className="voice-chat-input-area" style={styles.chatInputArea}>
           <input
             type="text"
             value={manualMessage}
@@ -1344,6 +1346,7 @@ export default function StreamingConsole() {
             }}
             placeholder={connected ? 'Message Beatrice...' : 'Start the session to chat'}
             disabled={!connected}
+            aria-label="Message Beatrice"
             style={styles.chatInput}
           />
           <button
@@ -1354,6 +1357,7 @@ export default function StreamingConsole() {
             }}
             onClick={handleManualSend}
             disabled={!connected}
+            aria-label="Send message"
           >
             <i className="ph-fill ph-arrow-up" style={styles.sendIcon}></i>
           </button>
@@ -1669,8 +1673,8 @@ const styles: Record<string, React.CSSProperties> = {
     zIndex: 100,
   },
   glassCircleBtn: {
-    width: '52px',
-    height: '52px',
+    width: 'clamp(44px, 13vw, 52px)',
+    height: 'clamp(44px, 13vw, 52px)',
     borderRadius: '50%',
     background: 'rgba(255, 255, 255, 0.03)',
     backdropFilter: 'blur(16px)',
@@ -1684,7 +1688,7 @@ const styles: Record<string, React.CSSProperties> = {
     color: 'white',
   },
   icon: {
-    fontSize: '22px',
+    fontSize: 'clamp(19px, 5.6vw, 22px)',
     color: '#9ca3af',
   },
   brandPill: {
@@ -1821,19 +1825,22 @@ const styles: Record<string, React.CSSProperties> = {
   },
   bottomControls: {
     position: 'fixed',
-    bottom: '48px',
+    bottom: 'calc(env(safe-area-inset-bottom, 0px) + 32px)',
     left: '50%',
     transform: 'translateX(-50%)',
-    display: 'flex',
+    display: 'grid',
+    gridTemplateColumns: 'repeat(5, minmax(0, 1fr))',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: '12px',
-    width: 'min(92vw, 372px)',
+    justifyItems: 'center',
+    gap: 'clamp(6px, 2.8vw, 12px)',
+    width: 'calc(100vw - 32px)',
+    maxWidth: '372px',
+    overflow: 'clip',
     zIndex: 100,
   },
   micFab: {
-    width: '56px',
-    height: '56px',
+    width: 'clamp(52px, 15vw, 56px)',
+    height: 'clamp(52px, 15vw, 56px)',
     borderRadius: '50%',
     background: 'linear-gradient(to bottom, #f0abfc, #7e22ce)',
     border: '2px solid rgba(255, 255, 255, 0.2)',
@@ -1855,8 +1862,8 @@ const styles: Record<string, React.CSSProperties> = {
   // Mic button with visualizer ring
   micButtonWrapper: {
     position: 'relative',
-    width: '64px',
-    height: '64px',
+    width: 'clamp(58px, 17vw, 64px)',
+    height: 'clamp(58px, 17vw, 64px)',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
@@ -1899,6 +1906,8 @@ const styles: Record<string, React.CSSProperties> = {
     right: '0',
     bottom: '0',
     width: 'min(420px, 100vw)',
+    maxWidth: '100vw',
+    overflow: 'hidden',
     display: 'flex',
     flexDirection: 'column',
     background: 'rgba(10, 10, 10, 0.95)',
@@ -1936,13 +1945,14 @@ const styles: Record<string, React.CSSProperties> = {
   chatHistory: {
     flex: 1,
     overflowY: 'auto',
+    overflowX: 'hidden',
     padding: '20px 24px',
     display: 'flex',
     flexDirection: 'column',
     gap: '16px',
   },
   chatBubble: {
-    maxWidth: '85%',
+    maxWidth: 'min(85%, 100%)',
     padding: '16px 20px',
     borderRadius: '20px',
     fontSize: '14px',
@@ -1967,6 +1977,9 @@ const styles: Record<string, React.CSSProperties> = {
   },
   bubbleContent: {
     flex: 1,
+    minWidth: 0,
+    overflowWrap: 'anywhere',
+    wordBreak: 'break-word',
   },
   bubbleCopyBtn: {
     width: '28px',
@@ -2014,14 +2027,20 @@ const styles: Record<string, React.CSSProperties> = {
     padding: '40px 20px',
   },
   chatInputArea: {
-    display: 'flex',
+    display: 'grid',
+    gridTemplateColumns: 'minmax(0, 1fr) 40px',
+    alignItems: 'center',
     gap: '12px',
     padding: '16px 24px',
+    paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 16px)',
     borderTop: '1px solid rgba(255, 255, 255, 0.08)',
     background: 'rgba(0, 0, 0, 0.3)',
+    maxWidth: '100%',
+    overflow: 'clip',
   },
   chatInput: {
-    flex: 1,
+    width: '100%',
+    minWidth: 0,
     background: 'rgba(255, 255, 255, 0.05)',
     border: '1px solid rgba(255, 255, 255, 0.08)',
     borderRadius: '9999px',
@@ -2033,6 +2052,7 @@ const styles: Record<string, React.CSSProperties> = {
   sendBtn: {
     width: '40px',
     height: '40px',
+    minWidth: '40px',
     borderRadius: '50%',
     background: '#d946ef',
     border: 'none',
