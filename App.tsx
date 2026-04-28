@@ -1730,7 +1730,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
         style={{ backgroundColor: '#0a0a0a' }}
         aria-hidden={currentView !== 'view-history'}>
         <div style={{ position: 'absolute', bottom: 0, right: 0, width: '250px', height: '250px', background: 'rgba(168,85,247,0.1)', borderRadius: '50%', filter: 'blur(60px)', pointerEvents: 'none' }} />
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', position: 'relative', zIndex: 10, padding: '56px 24px 48px', height: '100%' }}>
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', position: 'relative', zIndex: 10, padding: '56px 24px calc(env(safe-area-inset-bottom, 0px) + 104px)', height: '100%', overflowX: 'hidden' }}>
           <nav style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', flexShrink: 0 }}>
             <button onClick={goBack} className="glass glass-btn"
               style={{ width: '40px', height: '40px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
@@ -1738,35 +1738,65 @@ function AppShell({ children }: { children: React.ReactNode }) {
             </button>
             <h2 style={{ fontSize: '15px', fontWeight: 500, color: 'white' }}>Conversation History</h2>
             <button onClick={() => {
-              if (!currentUser || conversations.length === 0) return;
+              if (!currentUser || historyConversations.length === 0) return;
               if (!confirm('Clear all conversation history?')) return;
               setConversations([]);
+              setChatMessages([]);
+              setActiveConvId(null);
               createNewConversation();
-              if (currentUser) set(ref(rtdb, 'users/' + currentUser.uid + '/conversations'), {});
-            }} style={{ fontSize: '11px', color: 'rgba(248,113,113,0.7)', padding: '6px 12px', borderRadius: '9999px', cursor: 'pointer', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)' }}>
+              if (currentUser) set(ref(rtdb, 'users/' + currentUser.uid + '/conversations'), null);
+            }} disabled={!currentUser || historyConversations.length === 0}
+              style={{ fontSize: '11px', color: !currentUser || historyConversations.length === 0 ? 'rgba(156,163,175,0.45)' : 'rgba(248,113,113,0.7)', padding: '6px 12px', borderRadius: '9999px', cursor: !currentUser || historyConversations.length === 0 ? 'default' : 'pointer', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)' }}>
               Clear
             </button>
           </nav>
-          <div style={{ flex: 1, overflowY: 'auto' }} className="no-scrollbar">
-            {conversations.length === 0 ? (
-              <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#6b7280', fontSize: '14px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', marginBottom: '16px', minWidth: 0 }}>
+            <div style={{ minWidth: 0 }}>
+              <p style={{ fontSize: '12px', color: '#9ca3af', lineHeight: 1.4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {currentUser?.email || profile?.email || 'Current device user'}
+              </p>
+              <p style={{ fontSize: '11px', color: '#6b7280', marginTop: '2px' }}>
+                {historyLoading ? 'Syncing history...' : `${historyConversations.length} saved conversation${historyConversations.length === 1 ? '' : 's'}`}
+              </p>
+            </div>
+            <span style={{ flexShrink: 0, fontSize: '10px', color: '#86efac', background: 'rgba(134,239,172,0.12)', border: '1px solid rgba(134,239,172,0.18)', borderRadius: '9999px', padding: '5px 9px' }}>
+              Firebase
+            </span>
+          </div>
+          <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden' }} className="no-scrollbar">
+            {historyError ? (
+              <div style={{ minHeight: '45vh', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fca5a5', fontSize: '14px', textAlign: 'center', padding: '24px' }}>
+                <div>
+                  <i className="ph ph-warning" style={{ fontSize: '24px', marginBottom: '8px', opacity: 0.7 }}></i>
+                  <p>{historyError}</p>
+                </div>
+              </div>
+            ) : historyLoading && historyConversations.length === 0 ? (
+              <div style={{ minHeight: '45vh', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#6b7280', fontSize: '14px' }}>
+                <div style={{ textAlign: 'center' }}>
+                  <i className="ph ph-spinner-gap" style={{ fontSize: '24px', marginBottom: '8px', opacity: 0.4 }}></i>
+                  <p>Loading conversations...</p>
+                </div>
+              </div>
+            ) : historyConversations.length === 0 ? (
+              <div style={{ minHeight: '45vh', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#6b7280', fontSize: '14px' }}>
                 <div style={{ textAlign: 'center' }}>
                   <i className="ph ph-clock-counter-clockwise" style={{ fontSize: '24px', marginBottom: '8px', opacity: 0.3 }}></i>
                   <p>No conversations yet</p>
                 </div>
               </div>
             ) : (
-              conversations.map((conv) => {
+              historyConversations.map((conv) => {
                 const lastMsg = conv.messages && conv.messages.length > 0
                   ? conv.messages[conv.messages.length - 1].content.slice(0, 80)
                   : 'No messages';
                 const date = new Date(conv.updatedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
                 const msgCount = conv.messages ? Math.ceil(conv.messages.length / 2) : 0;
                 return (
-                  <div key={conv.id} onClick={() => { setActiveConvId(conv.id); setChatMessages(conv.messages || []); navigateTo('view-text'); }}
+                  <button key={conv.id} type="button" onClick={() => { setActiveConvId(conv.id); setChatMessages(conv.messages || []); navigateTo('view-text'); }}
                     className="history-item"
-                    style={{ background: 'rgba(255,255,255,0.03)', backdropFilter: 'blur(16px)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '16px', padding: '16px', marginBottom: '12px', cursor: 'pointer' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '4px' }}>
+                    style={{ width: '100%', textAlign: 'left', background: 'rgba(255,255,255,0.03)', backdropFilter: 'blur(16px)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '16px', padding: '16px', marginBottom: '12px', cursor: 'pointer', overflow: 'hidden' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '4px', gap: '8px' }}>
                       <span style={{ fontSize: '13px', fontWeight: 500, color: 'white', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', paddingRight: '8px', flex: 1 }}>{conv.title}</span>
                       <span style={{ fontSize: '10px', color: '#6b7280', whiteSpace: 'nowrap' }}>{date}</span>
                     </div>
@@ -1774,7 +1804,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px' }}>
                       <span style={{ fontSize: '10px', color: 'rgba(192,132,252,0.7)' }}>{msgCount} exchanges</span>
                     </div>
-                  </div>
+                  </button>
                 );
               })
             )}
